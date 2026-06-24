@@ -1,0 +1,10 @@
+{
+  "name": "pi-vim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Modal vim editing for pi's prompt box",
+  "keywords": ["pi", "extension", "vim", "modal-editor"],
+  "homepage": "https://github.com/k3-2o/pi-vim",
+  "repository": "github:k3-2o/pi-vim",
+  "license": "MIT"
+}
