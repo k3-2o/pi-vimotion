@@ -5,8 +5,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { PiVimEditor } from "./editor.ts";
-import type { VimMode, VisualType } from "./types.ts";
+import { PiVimEditor } from "./src/editor.ts";
+import type { VimMode, VisualType } from "./src/types.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
