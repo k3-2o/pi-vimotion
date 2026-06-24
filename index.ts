@@ -5,8 +5,11 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Markdown } from "@earendil-works/pi-tui";
 import { PiVimEditor } from "./src/editor.ts";
 import type { VimMode, VisualType } from "./src/types.ts";
+import { buildKeybindingsMarkdown } from "./src/keybindings.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
@@ -49,5 +52,29 @@ export default function (pi: ExtensionAPI) {
     });
 
     updateStatus("insert", "char");
+  });
+
+  // Register message renderer for /keybindings popup
+  pi.registerMessageRenderer("vim-keybindings", (message, _options, theme) => {
+    const content = typeof message.content === "string"
+      ? message.content
+      : message.content.filter(c => c.type === "text").map(c => c.text).join("\n");
+    return new Markdown(content, 1, 1, getMarkdownTheme());
+  });
+
+  // Register /keybindings command
+  pi.registerCommand("keybindings", {
+    description: "Show all pi-vim keybindings",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify("keybindings requires interactive mode", "error");
+        return;
+      }
+      pi.sendMessage({
+        customType: "vim-keybindings",
+        content: buildKeybindingsMarkdown(),
+        display: true,
+      }, { triggerTurn: false });
+    },
   });
 }
