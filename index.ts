@@ -47,6 +47,13 @@ export default function (pi: ExtensionAPI) {
           updateStatus(newMode, (editor as any).visualType as VisualType);
         }
       };
+      // K in normal mode shows keybinding reference
+      editor.onKeybindingsRequest = () => {
+        ctx.ui.custom<null>(
+          (tui2, theme, _kb, done) =>
+            createKeybindingsComponent(theme, getMarkdownTheme(), done, () => tui2.requestRender()),
+        );
+      };
       return editor;
     });
 

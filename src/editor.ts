@@ -26,6 +26,9 @@ export class PiVimEditor extends CustomEditor {
   lastReplayOp: ReplayOp | null = null;
   visualPendingGPrefix = false;
 
+  /** Callback to show keybinding reference (triggered by K in normal mode) */
+  onKeybindingsRequest?: () => void;
+
   // Expose state for ops.ts functions
   get edState(): EdState {
     const st = this.st;
@@ -171,6 +174,11 @@ export class PiVimEditor extends CustomEditor {
       }
       case "X": {
         for (let i = 0; i < count; i++) this.em("handleBackspace");
+        break;
+      }
+      // K — show keybinding reference
+      case "K": {
+        this.onKeybindingsRequest?.();
         break;
       }
       case "s": { this.em("handleForwardDelete"); this.mode = "insert"; break; }
