@@ -234,19 +234,4 @@ export function replayLastOp(
   return null;
 }
 
-// ---- Pending operator resolution ----
-export function resolvePendingOp(
-  s: EdState,
-  motion: string,
-  opCount: number,
-  ed: { applyMotion(m: string, c: number): void; st: { lines: string[]; cursorLine: number; cursorCol: number } },
-): "insert" | null {
-  if (motion === "repeat") {
-    return null; // handled by editor for line ops
-  }
 
-  const range = motionRange(motion, opCount, s.cursorLine, s.cursorCol, ed);
-  deleteRange(s, range.startLine, range.startCol, range.endLine, range.endCol);
-  setYank(range.text, "char");
-  return null;
-}
