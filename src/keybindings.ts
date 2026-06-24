@@ -1,7 +1,9 @@
 /**
- * Keybinding reference data for pi-vim.
- * Exported as a markdown string rendered into chat via sendMessage + messageRenderer.
+ * Keybinding reference for pi-vim.
+ * Renders as a Markdown component wrapped in a scrollable/dismissable overlay.
  */
+
+import { Markdown, matchesKey, type Component } from "@earendil-works/pi-tui";
 
 export function buildKeybindingsMarkdown(): string {
   return `### pi-vim Keybindings
@@ -32,9 +34,9 @@ export function buildKeybindingsMarkdown(): string {
 **Insert Mode**
 | Key | Action |
 |-----|--------|
-| \`i\` / \`a\` | Enter insert mode at cursor / after cursor |
-| \`I\` / \`A\` | Insert at line start / append at line end |
-| \`o\` / \`O\` | Open new line below / above |
+| \`i\` / \`a\` | Insert before / after cursor |
+| \`I\` / \`A\` | Insert at start / append at end of line |
+| \`o\` / \`O\` | Open line below / above |
 | \`s\` / \`S\` | Substitute char / substitute line |
 
 **Visual Mode**
@@ -52,5 +54,43 @@ export function buildKeybindingsMarkdown(): string {
 | \`g\` prefix | \`gg\` (goto top), \`g_\` (last non-blank), \`ge\` (word end bwd) |
 | \`Esc\` | Back to normal mode / cancel operation |
 
-Tip: Prefix any motion with a number, e.g. \`3j\` = move down 3 lines, \`d2w\` = delete 2 words.`;
+Tip: prefix with a number, e.g. \`3j\` = down 3 lines, \`d2w\` = delete 2 words.`;
+}
+
+/**
+ * Create a component that renders the keybinding markdown and handles keyboard.
+ */
+export function createKeybindingsComponent(
+  theme: any,
+  mdTheme: any,
+  done: (value: null) => void,
+  requestRender: () => void,
+): Component {
+  const md = new Markdown(buildKeybindingsMarkdown(), 1, 1, mdTheme);
+
+  return {
+    render(width: number): string[] {
+      return md.render(width);
+    },
+    invalidate(): void {
+      md.invalidate();
+    },
+    handleInput(data: string): void {
+      if (matchesKey(data, "escape") || data === "q") {
+        done(null);
+        return;
+      }
+      if (data === "j" || matchesKey(data, "down") || matchesKey(data, "pageDown")) {
+        // Let the Markdown component scroll if it supports it, or just dismiss
+        done(null);
+        return;
+      }
+      if (data === "k" || matchesKey(data, "up") || matchesKey(data, "pageUp")) {
+        done(null);
+        return;
+      }
+      // Any other key dismisses
+      done(null);
+    },
+  };
 }
