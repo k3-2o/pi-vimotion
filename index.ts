@@ -42,12 +42,9 @@ export default function (pi: ExtensionAPI) {
           updateStatus(newMode, (editor as any).visualType as VisualType);
         }
       };
-      // K in normal mode shows keybinding reference
+      // K in normal mode — routes through the /keybindings command for a fresh ctx
       editor.onKeybindingsRequest = () => {
-        ctx.ui.custom<null>(
-          (tui2, theme, _kb, done) =>
-            createKeybindingsComponent(theme, getMarkdownTheme(), done, () => tui2.requestRender()),
-        );
+        pi.sendUserMessage("/keybindings");
       };
       return editor;
     });
@@ -55,12 +52,16 @@ export default function (pi: ExtensionAPI) {
     updateStatus("insert", "char");
   });
 
-  // Register /keybindings command — shows markdown reference, escape to close
+  // Register /keybindings command — shows markdown reference, blocked during streaming
   pi.registerCommand("keybindings", {
     description: "Show pi-vim keybindings",
     handler: async (_args, ctx) => {
       if (!ctx.hasUI) {
         ctx.ui.notify("keybindings requires interactive mode", "error");
+        return;
+      }
+      if (!ctx.isIdle()) {
+        ctx.ui.notify("Wait for the stream to finish first", "warning");
         return;
       }
       await ctx.ui.custom<null>(
