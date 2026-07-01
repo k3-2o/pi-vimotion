@@ -19,7 +19,7 @@ export default function (pi: ExtensionAPI) {
       let color: string;
       if (mode === "normal") {
         label = "Vim: Normal";
-        color = "customMessageLabel";
+        color = "accent";
       } else if (mode === "visual") {
         label = vt === "line" ? "Vim: v-line" : "Vim: Visual";
         color = "warning";
@@ -42,8 +42,12 @@ export default function (pi: ExtensionAPI) {
           updateStatus(newMode, (editor as any).visualType as VisualType);
         }
       };
-      // K in normal mode shows keybinding reference
+      // K in normal mode shows keybinding reference (blocks during streaming)
       editor.onKeybindingsRequest = () => {
+        if (!ctx.isIdle()) {
+          ctx.ui.notify("Stream busy — try again in a sec", "warning");
+          return;
+        }
         ctx.ui.custom<null>(
           (tui2, theme, _kb, done) =>
             createKeybindingsComponent(theme, getMarkdownTheme(), done, () => tui2.requestRender()),
