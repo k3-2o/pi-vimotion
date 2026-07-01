@@ -7,9 +7,5 @@
   "repository": "github:k3-2o/pi-vim",
   "author": "k3-2o",
   "license": "MIT",
-  "pi": {
-    "commands": {
-      "keybindings": "Show pi-vim keybinding reference overlay"
-    }
-  }
+
 }

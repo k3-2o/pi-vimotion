@@ -3,8 +3,7 @@
 Modal vim editing for [pi](https://pi.dev)'s prompt box.
 
 Turn your pi input into a vim editor — motions, operators, visual mode,
-dot-repeat, count prefixes, and system clipboard integration. Press `K` or
-type `/keybindings` to see all available keys.
+dot-repeat, count prefixes, and system clipboard integration. Press `K` in normal mode to see all available keys.
 
 https://github.com/k3-2o/pi-vim
 
@@ -34,7 +33,7 @@ pi install pi-vim
 | Enter insert mode  | `i` / `a` / `I` / `A` / `o` / `O` / `s` / `S` |
 | Enter visual mode  | `v` (character) or `V` (line)          |
 | Back to normal     | `escape` (from insert or visual)       |
-| Show keybindings   | `K` in normal mode, or `/keybindings`  |
+| Show keybindings   | `K` in normal mode                       |
 | Repeat last op     | `.`                                    |
 | Undo               | `u`                                    |
 
