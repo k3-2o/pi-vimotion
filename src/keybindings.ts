@@ -42,7 +42,7 @@ export function buildKeybindingsMarkdown(): string {
 **Visual Mode**
 | Key | Action |
 |-----|--------|
-| \`v\` / \`V\` | Visual char mode / visual line mode |
+| \`v\` / \`V\` | Visual char mode / visual line mode (V-LINE) |
 | \`v\` / \`V\` (toggle) | Switch between char and line selection |
 | \`d\` / \`x\` / \`y\` / \`c\` | Delete / cut / yank / change selection |
 | \`Esc\` | Cancel visual selection |
