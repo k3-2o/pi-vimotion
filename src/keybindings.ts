@@ -61,7 +61,8 @@ export function buildKeybindingsMarkdown(): string {
 • Prefix with a number to repeat, e.g. \`3j\` = down 3 lines, \`d2w\` = delete 2 words
 • \`3Y\` yanks 3 lines, \`3D\` / \`3C\` deletes / changes 3 lines down
 • Operators + motion work in visual mode motions too
-• Yanked text is copied to your system clipboard`;
+• Yanked text is copied to your system clipboard
+• \`V\` + \`j\`/\`k\` selects whole lines; \`d\` deletes them, \`y\` yanks them`;
 }
 
 /**
