@@ -13,26 +13,21 @@ import { createKeybindingsComponent } from "./src/keybindings.ts";
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     const theme = ctx.ui.theme;
-    let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
     const updateStatus = (mode: VimMode, vt: VisualType) => {
-      if (hideTimer) clearTimeout(hideTimer);
-
       let label: string;
       let color: string;
       if (mode === "normal") {
-        label = "NORMAL";
+        label = "vim: normal";
         color = "accent";
       } else if (mode === "visual") {
-        label = vt === "line" ? "V-LINE" : "VISUAL";
+        label = vt === "line" ? "vim: v-line" : "vim: visual";
         color = "warning";
       } else {
-        label = "INSERT";
+        label = "vim: insert";
         color = "success";
       }
       ctx.ui.setStatus("pi-vim", theme.fg(color, label));
-
-      hideTimer = setTimeout(() => ctx.ui.setStatus("pi-vim", undefined), 3000);
     };
 
     ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {

@@ -5,12 +5,12 @@
  * vim motions, operators, and dot-repeat.
  */
 
-import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
-import type { VimMode, VisualType, OperatorType, PrefixType, ReplayOp } from "./types.ts";
+import type { VimMode, VisualType, OperatorType, PrefixType } from "./types.ts";
 import { findWordEnd, findPrevParagraph, findNextParagraph, firstNonBlankCol, lastNonBlankCol } from "./motions.ts";
 import {
-  type EdState, setYank, getYank, recordOp, getLastOp,
+  type EdState, setYank, recordOp, getLastOp,
   motionRange, deleteRange, deleteLines, pasteAfter, pasteBefore, replayLastOp,
 } from "./ops.ts";
 
@@ -23,7 +23,6 @@ export class PiVimEditor extends CustomEditor {
   countBuffer = "";
   visualStart: { line: number; col: number } | null = null;
   visualType: VisualType = "char";
-  lastReplayOp: ReplayOp | null = null;
   visualPendingGPrefix = false;
 
   /** Callback to show keybinding reference (triggered by K in normal mode) */
@@ -59,8 +58,9 @@ export class PiVimEditor extends CustomEditor {
     const s = this.st;
     switch (motion) {
       case "h": this.repeat(() => this.em("moveCursor", 0, -1), count); break;
-      case "j": this.repeat(() => this.em("moveCursor", 1, 0), count); break;
-      case "k": this.repeat(() => this.em("moveCursor", -1, 0), count); break;
+      // j/k pass count as deltaLine so moveCursor handles sticky-column in one step
+      case "j": this.em("moveCursor", count, 0); break;
+      case "k": this.em("moveCursor", -count, 0); break;
       case "l": this.repeat(() => this.em("moveCursor", 0, 1), count); break;
       case "w": this.repeat(() => this.em("moveWordForwards"), count); break;
       case "b": this.repeat(() => this.em("moveWordBackwards"), count); break;
@@ -68,6 +68,11 @@ export class PiVimEditor extends CustomEditor {
         const line = s.lines[s.cursorLine] ?? "";
         const col = findWordEnd(line, s.cursorCol);
         s.cursorCol = col;
+      }, count); break;
+      case "ge": this.repeat(() => {
+        this.em("moveWordBackwards");
+        const line = s.lines[s.cursorLine] ?? "";
+        s.cursorCol = findWordEnd(line, s.cursorCol);
       }, count); break;
       case "0": s.cursorCol = 0; break;
       case "$": this.em("moveToLineEnd"); break;
@@ -117,6 +122,7 @@ export class PiVimEditor extends CustomEditor {
       } else if (this.mode === "visual") {
         this.mode = "normal";
         this.visualStart = null;
+        this.countBuffer = "";
       } else {
         super.handleInput(data);
       }
@@ -174,6 +180,7 @@ export class PiVimEditor extends CustomEditor {
       }
       case "X": {
         for (let i = 0; i < count; i++) this.em("handleBackspace");
+        recordOp({ kind: "delete-char", count });
         break;
       }
       // K — show keybinding reference
@@ -181,28 +188,50 @@ export class PiVimEditor extends CustomEditor {
         this.onKeybindingsRequest?.();
         break;
       }
-      case "s": { this.em("handleForwardDelete"); this.mode = "insert"; break; }
-      case "S": { deleteLines(this.edState, 1); this.mode = "insert"; break; }
+      case "s": { this.em("handleForwardDelete"); recordOp({ kind: "delete-char", count: 1 }); this.mode = "insert"; break; }
+      case "S": { deleteLines(this.edState, 1); recordOp({ kind: "change-line", count: 1 }); this.mode = "insert"; break; }
       case "D": {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
         this.em("deleteToEndOfLine");
-        setYank(deleted, "char");
-        recordOp({ kind: "delete-motion", motion: "$", count: 1, text: deleted });
+        if (count > 1) {
+          // Delete lines below too
+          const end = Math.min(s.cursorLine + count, s.lines.length);
+          const extra = s.lines.slice(s.cursorLine + 1, end).join("\n");
+          setYank(extra ? deleted + "\n" + extra : deleted, "char");
+          s.lines.splice(s.cursorLine + 1, end - s.cursorLine - 1);
+          this.edState.pushUndoSnapshot?.();
+          this.edState.onChange?.(s.lines.join("\n"));
+          recordOp({ kind: "delete-motion", motion: "j", count: count - 1, text: extra });
+        } else {
+          setYank(deleted, "char");
+          recordOp({ kind: "delete-motion", motion: "$", count: 1, text: deleted });
+        }
         break;
       }
       case "C": {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
         this.em("deleteToEndOfLine");
-        setYank(deleted, "char");
+        if (count > 1) {
+          const end = Math.min(s.cursorLine + count, s.lines.length);
+          const extra = s.lines.slice(s.cursorLine + 1, end).join("\n");
+          setYank(extra ? deleted + "\n" + extra : deleted, "char");
+          s.lines.splice(s.cursorLine + 1, end - s.cursorLine - 1);
+          this.edState.pushUndoSnapshot?.();
+          this.edState.onChange?.(s.lines.join("\n"));
+        } else {
+          setYank(deleted, "char");
+        }
+        recordOp({ kind: "change-motion", motion: "$", count, text: deleted });
         this.mode = "insert";
         break;
       }
       case "Y": {
-        const line = s.lines[s.cursorLine] ?? "";
-        setYank(line, "line");
-        recordOp({ kind: "yank-line", count: 1 });
+        const end = Math.min(s.cursorLine + count, s.lines.length);
+        const text = s.lines.slice(s.cursorLine, end).join("\n");
+        setYank(text, "line");
+        recordOp({ kind: "yank-line", count });
         break;
       }
       case "p": { pasteAfter(this.edState, count); recordOp({ kind: "paste", count }); break; }
@@ -222,7 +251,7 @@ export class PiVimEditor extends CustomEditor {
       // Enter insert mode
       case "i": this.mode = "insert"; break;
       case "a": { this.em("moveCursor", 0, 1); this.mode = "insert"; break; }
-      case "I": { this.em("moveToLineStart"); s.cursorCol = firstNonBlankCol(s.lines[s.cursorLine] ?? ""); this.mode = "insert"; break; }
+      case "I": { s.cursorCol = firstNonBlankCol(s.lines[s.cursorLine] ?? ""); this.mode = "insert"; break; }
       case "A": { this.em("moveToLineEnd"); this.mode = "insert"; break; }
       case "o": { this.em("moveToLineEnd"); this.em("addNewLine"); this.mode = "insert"; break; }
       case "O": {
@@ -331,6 +360,7 @@ export class PiVimEditor extends CustomEditor {
       this.visualPendingGPrefix = false;
       if (data === "g") { this.applyMotion("gg", 1); this.countBuffer = ""; return; }
       if (data === "_") { this.applyMotion("g_", 1); this.countBuffer = ""; return; }
+      if (data === "e") { this.applyMotion("ge", 1); this.countBuffer = ""; return; }
       this.countBuffer = "";
     }
     if (data === "g") { this.visualPendingGPrefix = true; return; }
@@ -370,28 +400,46 @@ export class PiVimEditor extends CustomEditor {
       return parts.join("\n");
     };
 
-    const delSelection = (insertMode = false) => {
+    /**
+     * Delete/cut the visual selection, yanking it first.
+     * Handles both char and line visual types properly.
+     */
+    const deleteVisualSelection = (insertMode = false) => {
       const text = selText();
       setYank(text, this.visualType);
+      copyToClipboard(text).catch(() => {});
+      const opKind = insertMode ? "change-visual" : "delete-visual";
+      recordOp({ kind: opKind, visualType: this.visualType, text });
+
       if (this.visualType === "line") {
         const [ls, le] = sL <= eL ? [sL, eL] : [eL, sL];
         const nl = [...this.st.lines.slice(0, ls), ...this.st.lines.slice(le + 1)];
         this.st.lines = nl.length === 0 ? [""] : nl;
         this.st.cursorLine = Math.min(ls, this.st.lines.length - 1);
         this.st.cursorCol = 0;
+        // Notify the editor so undo snapshot is pushed and UI updates
+        this.edState.pushUndoSnapshot?.();
+        this.edState.onChange?.(this.st.lines.join("\n"));
       } else {
-        const [rS, rE] = sL <= eL ? [sL, eL] : [eL, sL];
-        const [rC1, rC2] = sL <= eL ? [sC, eC] : [eC, sC];
-        deleteRange(this.edState, rS, rC1, rE, rC2);
+        deleteRange(this.edState, ...(sL <= eL ? [sL, sC, eL, eC] : [eL, eC, sL, sC]));
       }
+
       this.mode = insertMode ? "insert" : "normal";
       this.visualStart = null;
     };
 
     switch (data) {
-      case "d": case "x": delSelection(); break;
-      case "y": setYank(selText(), this.visualType); this.mode = "normal"; this.visualStart = null; break;
-      case "c": delSelection(true); break;
+      case "d": case "x": deleteVisualSelection(); break;
+      case "y": {
+        const text = selText();
+        setYank(text, this.visualType);
+        copyToClipboard(text).catch(() => {});
+        recordOp({ kind: "yank-visual", visualType: this.visualType, text });
+        this.mode = "normal";
+        this.visualStart = null;
+        break;
+      }
+      case "c": deleteVisualSelection(true); break;
       case "v": this.visualType = "char"; break;
       case "V": this.visualType = "line"; break;
       default:
