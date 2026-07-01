@@ -18,13 +18,13 @@ export default function (pi: ExtensionAPI) {
       let label: string;
       let color: string;
       if (mode === "normal") {
-        label = "vim: normal";
-        color = "accent";
+        label = "Vim: Normal";
+        color = "customMessageLabel";
       } else if (mode === "visual") {
-        label = vt === "line" ? "vim: v-line" : "vim: visual";
+        label = vt === "line" ? "Vim: v-line" : "Vim: Visual";
         color = "warning";
       } else {
-        label = "vim: insert";
+        label = "Vim: Insert";
         color = "success";
       }
       ctx.ui.setStatus("pi-vim", theme.fg(color, label));
