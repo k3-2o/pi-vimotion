@@ -21,7 +21,7 @@ export default function (pi: ExtensionAPI) {
         label = "vim: normal";
         color = "accent";
       } else if (mode === "visual") {
-        label = vt === "line" ? "vim: V-LINE" : "vim: visual";
+        label = vt === "line" ? "vim: v-line" : "vim: visual";
         color = "warning";
       } else {
         label = "vim: insert";
