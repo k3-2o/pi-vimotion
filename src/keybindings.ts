@@ -12,7 +12,7 @@ export function buildKeybindingsMarkdown(): string {
 | Key | Action |
 |-----|--------|
 | \`h\` / \`j\` / \`k\` / \`l\` | Left / Down / Up / Right |
-| \`w\` / \`b\` / \`e\` | Word fwd / bwd / word end |
+| \`w\` / \`b\` / \`e\` / \`ge\` | Word fwd / bwd / word end / word end bwd |
 | \`0\` / \`$\` / \`^\` / \`g_\` | Line start / end / first non-blank / last non-blank |
 | \`gg\` / \`G\` / \`{N}G\` | First line / last line / go to line N |
 | \`{\` / \`}\` | Paragraph backward / forward |
@@ -28,7 +28,7 @@ export function buildKeybindingsMarkdown(): string {
 | Key | Action |
 |-----|--------|
 | \`dd\` / \`yy\` / \`cc\` | Delete / yank / change whole line |
-| \`D\` / \`C\` / \`Y\` | Delete / change / yank to line end |
+| \`D\` / \`C\` / \`Y\` | Delete / change / yank to end of line(s) |
 | \`p\` / \`P\` | Paste after / before cursor |
 
 **Insert Mode**
@@ -43,7 +43,9 @@ export function buildKeybindingsMarkdown(): string {
 | Key | Action |
 |-----|--------|
 | \`v\` / \`V\` | Visual char mode / visual line mode |
+| \`v\` / \`V\` (toggle) | Switch between char and line selection |
 | \`d\` / \`x\` / \`y\` / \`c\` | Delete / cut / yank / change selection |
+| \`Esc\` | Cancel visual selection |
 
 **Editing**
 | Key | Action |
@@ -52,9 +54,14 @@ export function buildKeybindingsMarkdown(): string {
 | \`u\` | Undo |
 | \`.\` | Repeat last operation |
 | \`g\` prefix | \`gg\` (goto top), \`g_\` (last non-blank), \`ge\` (word end bwd) |
+| \`K\` | Show this keybinding reference |
 | \`Esc\` | Back to normal mode / cancel operation |
 
-Tip: prefix with a number, e.g. \`3j\` = down 3 lines, \`d2w\` = delete 2 words.`;
+**Tips**
+• Prefix with a number to repeat, e.g. \`3j\` = down 3 lines, \`d2w\` = delete 2 words
+• \`3Y\` yanks 3 lines, \`3D\` / \`3C\` deletes / changes 3 lines down
+• Operators + motion work in visual mode motions too
+• Yanked text is copied to your system clipboard`;
 }
 
 /**

@@ -230,6 +230,29 @@ export function replayLastOp(
     case "paste-before":
       pasteBefore(s, count);
       break;
+
+    // Visual mode operations (dot-repeat)
+    case "yank-visual":
+      if (op.text) setYank(op.text, op.visualType ?? "char");
+      break;
+    case "delete-visual":
+    case "change-visual": {
+      if (!op.text) break;
+      setYank(op.text, op.visualType ?? "char");
+      if (op.visualType === "line") {
+        const lineCount = op.text.split("\n").length;
+        deleteLines(s, lineCount);
+      } else {
+        // Char-wise: delete forward by the same number of characters
+        const cursor = getCursor(s);
+        const line = s.lines[cursor.line] ?? "";
+        const len = op.text.length;
+        if (cursor.col + len <= line.length) {
+          deleteRange(s, cursor.line, cursor.col, cursor.line, cursor.col + len);
+        }
+      }
+      return op.kind === "change-visual" ? "insert" : null;
+    }
   }
   return null;
 }
