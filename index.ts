@@ -55,18 +55,5 @@ export default function (pi: ExtensionAPI) {
     updateStatus("insert", "char");
   });
 
-  // Register /keybindings command — shows markdown reference, escape to close
-  pi.registerCommand("keybindings", {
-    description: "Show pi-vim keybindings",
-    handler: async (_args, ctx) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify("keybindings requires interactive mode", "error");
-        return;
-      }
-      await ctx.ui.custom<null>(
-        (tui, theme, _keybindings, done) =>
-          createKeybindingsComponent(theme, getMarkdownTheme(), done, () => tui.requestRender()),
-      );
-    },
-  });
+
 }
