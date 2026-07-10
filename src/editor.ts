@@ -6,7 +6,7 @@
  */
 
 import { CustomEditor, copyToClipboard } from "@earendil-works/pi-coding-agent";
-import { matchesKey } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth, truncateToWidth, CURSOR_MARKER } from "@earendil-works/pi-tui";
 import type { VimMode, VisualType, OperatorType, PrefixType } from "./types.ts";
 import { findWordEnd, findPrevParagraph, findNextParagraph, firstNonBlankCol, lastNonBlankCol } from "./motions.ts";
 import {
@@ -49,16 +49,14 @@ export class PiVimEditor extends CustomEditor {
   }
 
   private em(name: string, ...args: unknown[]) {
-    // Call directly on (this as any) to preserve 'this' binding in the base class method
     (this as any)[name](...args);
   }
 
-  // ---- Motion wrappers (call editor internals then pure helpers) ----
+  // ---- Motion wrappers ----
   applyMotion(motion: string, count: number): void {
     const s = this.st;
     switch (motion) {
       case "h": this.repeat(() => this.em("moveCursor", 0, -1), count); break;
-      // j/k pass count as deltaLine so moveCursor handles sticky-column in one step
       case "j": this.em("moveCursor", count, 0); break;
       case "k": this.em("moveCursor", -count, 0); break;
       case "l": this.repeat(() => this.em("moveCursor", 0, 1), count); break;
@@ -135,17 +133,14 @@ export class PiVimEditor extends CustomEditor {
 
   // ---- Normal mode ----
   private handleNormal(data: string): void {
-    // Ctrl+r — consume (no redo in base editor)
     if (matchesKey(data, "ctrl+r")) return;
 
-    // Numbers: 1-9 start count, 0 continues existing count only
     if (/^[1-9]$/.test(data)) { this.countBuffer += data; return; }
     if (data === "0" && this.countBuffer.length > 0) { this.countBuffer += data; return; }
 
     const count = this.countBuffer ? parseInt(this.countBuffer, 10) : 1;
     this.countBuffer = "";
 
-    // Pending operator/prefix
     if (this.pendingOp) {
       if (this.pendingOp.type === "g") {
         this.handleGPrefix(data, count);
@@ -155,10 +150,8 @@ export class PiVimEditor extends CustomEditor {
       return;
     }
 
-    // Single-key commands
     const s = this.st;
     switch (data) {
-      // Motions
       case "h": case "j": case "k": case "l":
       case "w": case "b": case "e":
       case "0": case "$": case "^":
@@ -167,35 +160,51 @@ export class PiVimEditor extends CustomEditor {
         break;
       case "G": this.applyMotion("G", count); break;
 
-      // Prefixes
       case "g": this.pendingOp = { type: "g", count }; return;
       case "d": case "y": case "c":
         this.pendingOp = { type: data as OperatorType, count }; return;
 
-      // Edit commands
       case "x": {
+        const line = s.lines[s.cursorLine] ?? "";
+        const del = s.cursorCol < line.length ? line[s.cursorCol] : "\n";
         for (let i = 0; i < count; i++) this.em("handleForwardDelete");
+        setYank(del.repeat(count), "char");
         recordOp({ kind: "delete-char", count });
         break;
       }
       case "X": {
+        const col = s.cursorCol;
+        const deleted = col > 0 ? (s.lines[s.cursorLine] ?? "").slice(Math.max(0, col - count), col) : "";
         for (let i = 0; i < count; i++) this.em("handleBackspace");
+        if (deleted) setYank(deleted, "char");
         recordOp({ kind: "delete-char", count });
         break;
       }
-      // K — show keybinding reference
       case "K": {
         this.onKeybindingsRequest?.();
         break;
       }
-      case "s": { this.em("handleForwardDelete"); recordOp({ kind: "delete-char", count: 1 }); this.mode = "insert"; break; }
-      case "S": { deleteLines(this.edState, 1); recordOp({ kind: "change-line", count: 1 }); this.mode = "insert"; break; }
+      case "s": {
+        const line = s.lines[s.cursorLine] ?? "";
+        const del = s.cursorCol < line.length ? line[s.cursorCol] : "";
+        this.em("handleForwardDelete");
+        setYank(del, "char");
+        recordOp({ kind: "delete-char", count: 1 });
+        this.mode = "insert";
+        break;
+      }
+      case "S": {
+        const text = deleteLines(this.edState, 1);
+        setYank(text, "line");
+        recordOp({ kind: "change-line", count: 1 });
+        this.mode = "insert";
+        break;
+      }
       case "D": {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
         this.em("deleteToEndOfLine");
         if (count > 1) {
-          // Delete lines below too
           const end = Math.min(s.cursorLine + count, s.lines.length);
           const extra = s.lines.slice(s.cursorLine + 1, end).join("\n");
           setYank(extra ? deleted + "\n" + extra : deleted, "char");
@@ -241,14 +250,12 @@ export class PiVimEditor extends CustomEditor {
         const result = replayLastOp(this.edState, { applyMotion: (m, c) => this.applyMotion(m, c), st: this.st });
         if (result === "insert") this.mode = "insert";
         if (result === "inplace") {
-          // delete-char: repeat via ForwardDelete
           const op = getLastOp();
           for (let i = 0; i < (op?.count ?? 1); i++) this.em("handleForwardDelete");
         }
         break;
       }
 
-      // Enter insert mode
       case "i": this.mode = "insert"; break;
       case "a": { this.em("moveCursor", 0, 1); this.mode = "insert"; break; }
       case "I": { s.cursorCol = firstNonBlankCol(s.lines[s.cursorLine] ?? ""); this.mode = "insert"; break; }
@@ -256,19 +263,14 @@ export class PiVimEditor extends CustomEditor {
       case "o": { this.em("moveToLineEnd"); this.em("addNewLine"); this.mode = "insert"; break; }
       case "O": {
         if (s.cursorLine > 0) {
-          s.cursorCol = 0;
-          this.em("addNewLine");
-          s.cursorLine = s.cursorLine - 1;
+          s.cursorCol = 0; this.em("addNewLine"); s.cursorLine = s.cursorLine - 1;
         } else {
-          s.cursorCol = 0;
-          this.em("addNewLine");
-          s.cursorLine = 0;
+          s.cursorCol = 0; this.em("addNewLine"); s.cursorLine = 0;
         }
         this.mode = "insert";
         break;
       }
 
-      // Visual mode
       case "v": {
         this.visualStart = { line: s.cursorLine, col: s.cursorCol };
         this.visualType = "char"; this.mode = "visual"; break;
@@ -278,7 +280,6 @@ export class PiVimEditor extends CustomEditor {
         this.visualType = "line"; this.mode = "visual"; break;
       }
 
-      // Ignore printable chars
       default:
         if (data.length === 1 && data.charCodeAt(0) >= 32) return;
         super.handleInput(data);
@@ -301,13 +302,12 @@ export class PiVimEditor extends CustomEditor {
     this.pendingOp = null;
   }
 
-  // ---- Operator pending handler (d, y, c) ----
+  // ---- Operator pending handler ----
   private handlePendingOperator(data: string, count: number) {
     const op = this.pendingOp!.type as OperatorType;
     const opCount = this.pendingOp!.count * count;
     const s = this.st;
 
-    // Line operators (dd, yy, cc)
     if (data === op) {
       this.pendingOp = null;
       if (op === "d") {
@@ -328,7 +328,6 @@ export class PiVimEditor extends CustomEditor {
       return;
     }
 
-    // Operator + motion
     const motions = ["h","j","k","l","w","b","e","0","$","^","gg","G","{","}","g_"];
     if (!motions.includes(data)) {
       this.pendingOp = null;
@@ -355,7 +354,6 @@ export class PiVimEditor extends CustomEditor {
 
   // ---- Visual mode ----
   private handleVisual(data: string): void {
-    // g prefix for gg/g_
     if (this.visualPendingGPrefix) {
       this.visualPendingGPrefix = false;
       if (data === "g") { this.applyMotion("gg", 1); this.countBuffer = ""; return; }
@@ -365,7 +363,6 @@ export class PiVimEditor extends CustomEditor {
     }
     if (data === "g") { this.visualPendingGPrefix = true; return; }
 
-    // Single-key motions extend selection
     const motions = ["h","j","k","l","w","b","e","0","$","^","G","{","}"];
     if (motions.includes(data)) {
       this.applyMotion(data, this.countBuffer ? parseInt(this.countBuffer, 10) : 1);
@@ -373,12 +370,10 @@ export class PiVimEditor extends CustomEditor {
       return;
     }
 
-    // Count numbers
     if (/^[1-9]$/.test(data)) { this.countBuffer += data; return; }
     if (data === "0" && this.countBuffer.length > 0) { this.countBuffer += data; return; }
     this.countBuffer = "";
 
-    // Build selection range
     const cursor = { line: this.st.cursorLine, col: this.st.cursorCol };
     const start = this.visualStart!;
     const sL = start.line, sC = start.col, eL = cursor.line, eC = cursor.col;
@@ -400,10 +395,6 @@ export class PiVimEditor extends CustomEditor {
       return parts.join("\n");
     };
 
-    /**
-     * Delete/cut the visual selection, yanking it first.
-     * Handles both char and line visual types properly.
-     */
     const deleteVisualSelection = (insertMode = false) => {
       const text = selText();
       setYank(text, this.visualType);
@@ -417,14 +408,12 @@ export class PiVimEditor extends CustomEditor {
         this.st.lines = nl.length === 0 ? [""] : nl;
         this.st.cursorLine = Math.min(ls, this.st.lines.length - 1);
         this.st.cursorCol = 0;
-        // Notify the editor so undo snapshot is pushed and UI updates
         this.edState.pushUndoSnapshot?.();
         this.edState.onChange?.(this.st.lines.join("\n"));
       } else {
         const [sl, sc, el, ec] = sL <= eL ? [sL, sC, eL, eC] : [eL, eC, sL, sC];
         deleteRange(this.edState, sl, sc, el, ec);
       }
-
       this.mode = insertMode ? "insert" : "normal";
       this.visualStart = null;
     };
@@ -447,5 +436,166 @@ export class PiVimEditor extends CustomEditor {
         if (data.length === 1 && data.charCodeAt(0) >= 32) return;
         super.handleInput(data);
     }
+  }
+
+  // ---- Render override for visual selection highlighting ----
+  render(width: number): string[] {
+    if (this.mode !== "visual" || !this.visualStart) {
+      return super.render(width);
+    }
+
+    const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+    const paddingX = Math.min((this as any).paddingX, maxPadding);
+    const contentWidth = Math.max(1, width - paddingX * 2);
+    const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1));
+    (this as any).lastWidth = layoutWidth;
+
+    const horizontal = this.borderColor("─");
+    const layoutLines: any[] = (this as any).layoutText(layoutWidth);
+
+    // Compute visual selection ranges per logical line
+    const s = this.st;
+    const selA = { line: this.visualStart.line, col: this.visualStart.col };
+    const selB = { line: s.cursorLine, col: s.cursorCol };
+    const isForward = selA.line < selB.line || (selA.line === selB.line && selA.col <= selB.col);
+    const selStartLine = isForward ? selA.line : selB.line;
+    const selStartCol = isForward ? selA.col : selB.col;
+    const selEndLine = isForward ? selB.line : selA.line;
+    const selEndCol = isForward ? selB.col : selA.col;
+
+    // Track byte offset into each logical line to map layout chunks → selection position
+    let logicalIdx = 0;
+    let byteOffset = 0;
+
+    for (let li = 0; li < layoutLines.length; li++) {
+      const ll = layoutLines[li];
+      if (!ll || !ll.text) continue;
+
+      const logicalLen = s.lines[logicalIdx]?.length ?? 0;
+      const chunkText = ll.text;
+      const chunkLen = chunkText.length;
+
+      // Does this logical line overlap the selection?
+      if (logicalIdx >= selStartLine && logicalIdx <= selEndLine) {
+        const lineSelStart = logicalIdx === selStartLine ? selStartCol : 0;
+        const lineSelEnd = logicalIdx === selEndLine ? selEndCol : logicalLen;
+
+        // Where does this layout chunk overlap the selection?
+        const chunkStart = byteOffset;
+        const chunkEnd = byteOffset + chunkLen;
+        const overlapStart = Math.max(lineSelStart, chunkStart);
+        const overlapEnd = Math.min(lineSelEnd, chunkEnd);
+
+        if (overlapStart < overlapEnd && overlapStart < chunkEnd) {
+          const localStart = Math.max(0, overlapStart - chunkStart);
+          const localEnd = Math.min(chunkLen, overlapEnd - chunkStart);
+
+          if (localStart < localEnd && localStart < chunkLen) {
+            const before = chunkText.slice(0, localStart);
+            const selected = chunkText.slice(localStart, localEnd);
+            const after = chunkText.slice(localEnd);
+            ll.text = `${before}\x1b[7m${selected}\x1b[0m${after}`;
+
+            // Adjust cursor position for added ANSI bytes
+            if (ll.hasCursor && ll.cursorPos !== undefined && ll.cursorPos > localStart) {
+              ll.cursorPos += "\x1b[7m".length + "\x1b[0m".length;
+            }
+          }
+        }
+      }
+
+      byteOffset += chunkLen;
+      // Move to next logical line when we've consumed all its bytes
+      if (byteOffset >= logicalLen && li + 1 < layoutLines.length) {
+        logicalIdx++;
+        byteOffset = 0;
+      }
+    }
+
+    // ---- Scroll offset (same as base Editor) ----
+    const terminalRows = this.tui.terminal.rows;
+    const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+    let cursorLineIndex = layoutLines.findIndex((l: any) => l.hasCursor);
+    if (cursorLineIndex === -1) cursorLineIndex = 0;
+
+    if (cursorLineIndex < (this as any).scrollOffset) {
+      (this as any).scrollOffset = cursorLineIndex;
+    } else if (cursorLineIndex >= (this as any).scrollOffset + maxVisibleLines) {
+      (this as any).scrollOffset = cursorLineIndex - maxVisibleLines + 1;
+    }
+    const maxScrollOffset = Math.max(0, layoutLines.length - maxVisibleLines);
+    (this as any).scrollOffset = Math.max(0, Math.min((this as any).scrollOffset, maxScrollOffset));
+
+    const visibleLines = layoutLines.slice((this as any).scrollOffset, (this as any).scrollOffset + maxVisibleLines);
+    const result: string[] = [];
+    const leftPadding = " ".repeat(paddingX);
+    const rightPadding = leftPadding;
+
+    // ---- Top border ----
+    if ((this as any).scrollOffset > 0) {
+      const indicator = `─── ↑ ${(this as any).scrollOffset} more `;
+      const remaining = width - visibleWidth(indicator);
+      if (remaining >= 0) {
+        result.push(truncateToWidth(this.borderColor(indicator + "─".repeat(remaining)), width));
+      } else {
+        result.push(truncateToWidth(this.borderColor(indicator), width));
+      }
+    } else {
+      result.push(truncateToWidth(horizontal.repeat(width), width));
+    }
+
+    // ---- Text lines with cursor ----
+    const emitCursorMarker = this.focused;
+    for (const layoutLine of visibleLines) {
+      let displayText = layoutLine.text;
+      let lineVisibleWidth = visibleWidth(layoutLine.text);
+      let cursorInPadding = false;
+
+      if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
+        const before = displayText.slice(0, layoutLine.cursorPos);
+        const after = displayText.slice(layoutLine.cursorPos);
+        const marker = emitCursorMarker ? CURSOR_MARKER : "";
+        if (after.length > 0) {
+          const afterGraphemes = [...(this as any).segment(after, "grapheme")];
+          const firstGrapheme = afterGraphemes[0]?.segment || "";
+          const restAfter = after.slice(firstGrapheme.length);
+          const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
+          displayText = before + marker + cursor + restAfter;
+        } else {
+          const cursor = "\x1b[7m \x1b[0m";
+          displayText = before + marker + cursor;
+          lineVisibleWidth = lineVisibleWidth + 1;
+          if (lineVisibleWidth > contentWidth && paddingX > 0) {
+            cursorInPadding = true;
+          }
+        }
+      }
+
+      const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
+      const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
+      result.push(truncateToWidth(`${leftPadding}${displayText}${padding}${lineRightPadding}`, width));
+    }
+
+    // ---- Bottom border ----
+    const linesBelow = layoutLines.length - ((this as any).scrollOffset + visibleLines.length);
+    if (linesBelow > 0) {
+      const indicator = `─── ↓ ${linesBelow} more `;
+      const remaining = width - visibleWidth(indicator);
+      result.push(truncateToWidth(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))), width));
+    } else {
+      result.push(truncateToWidth(horizontal.repeat(width), width));
+    }
+
+    // ---- Autocomplete ----
+    if ((this as any).autocompleteState && (this as any).autocompleteList) {
+      const autocompleteResult = (this as any).autocompleteList.render(contentWidth);
+      for (const line of autocompleteResult) {
+        const lineWidth = visibleWidth(line);
+        const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
+        result.push(truncateToWidth(`${leftPadding}${line}${linePadding}${rightPadding}`, width));
+      }
+    }
+
+    return result;
   }
 }
