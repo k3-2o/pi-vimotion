@@ -53,6 +53,12 @@ export function getLastOp(): ReplayOp | null {
   return lastOp;
 }
 
+/** Reset session-scoped mutable state. Call on session shutdown. */
+export function resetState() {
+  yankBuffer = null;
+  lastOp = null;
+}
+
 // ---- Motion range computation ----
 export interface TextRange {
   startLine: number; startCol: number;

@@ -2,10 +2,19 @@
   "name": "pi-vim",
   "version": "1.0.0",
   "description": "Modal vim editing for pi's prompt box — motions, operators, visual mode, dot-repeat, system clipboard",
-  "keywords": ["pi", "pi-extension", "pi-package", "vim", "modal-editor", "keybindings"],
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "pi-package",
+    "vim",
+    "modal-editor",
+    "keybindings"
+  ],
   "homepage": "https://github.com/k3-2o/pi-vim",
   "repository": "github:k3-2o/pi-vim",
   "author": "k3-2o",
   "license": "MIT",
-
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
 }

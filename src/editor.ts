@@ -30,14 +30,14 @@ export class PiVimEditor extends CustomEditor {
 
   // Expose state for ops.ts functions
   get edState(): EdState {
-    const st = this.st;
+    const s = this.st;
     return {
-      get lines() { return st.lines; },
-      set lines(v: string[]) { st.lines = v; },
-      get cursorLine() { return st.cursorLine; },
-      set cursorLine(v: number) { st.cursorLine = v; },
-      get cursorCol() { return st.cursorCol; },
-      set cursorCol(v: number) { st.cursorCol = v; },
+      get lines() { return s.lines; },
+      set lines(v: string[]) { s.lines = v; },
+      get cursorLine() { return s.cursorLine; },
+      set cursorLine(v: number) { s.cursorLine = v; },
+      get cursorCol() { return s.cursorCol; },
+      set cursorCol(v: number) { s.cursorCol = v; },
       onChange: (text) => { if ((this as any).onChange) (this as any).onChange(text); },
       pushUndoSnapshot: () => { (this as any).pushUndoSnapshot(); },
     };
@@ -238,7 +238,7 @@ export class PiVimEditor extends CustomEditor {
       case "P": { pasteBefore(this.edState, count); recordOp({ kind: "paste-before", count }); break; }
       case "u": this.em("undo"); break;
       case ".": {
-        const result = replayLastOp(this.edState, this);
+        const result = replayLastOp(this.edState, { applyMotion: (m, c) => this.applyMotion(m, c), st: this.st });
         if (result === "insert") this.mode = "insert";
         if (result === "inplace") {
           // delete-char: repeat via ForwardDelete
@@ -338,7 +338,7 @@ export class PiVimEditor extends CustomEditor {
     }
 
     this.pendingOp = null;
-    const range = motionRange(data, opCount, s.cursorLine, s.cursorCol, this);
+    const range = motionRange(data, opCount, s.cursorLine, s.cursorCol, { applyMotion: (m, c) => this.applyMotion(m, c), st: this.st });
     setYank(range.text, "char");
 
     if (op === "d") {
@@ -421,7 +421,8 @@ export class PiVimEditor extends CustomEditor {
         this.edState.pushUndoSnapshot?.();
         this.edState.onChange?.(this.st.lines.join("\n"));
       } else {
-        deleteRange(this.edState, ...(sL <= eL ? [sL, sC, eL, eC] : [eL, eC, sL, sC]));
+        const [sl, sc, el, ec] = sL <= eL ? [sL, sC, eL, eC] : [eL, eC, sL, sC];
+        deleteRange(this.edState, sl, sc, el, ec);
       }
 
       this.mode = insertMode ? "insert" : "normal";
