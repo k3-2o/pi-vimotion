@@ -69,10 +69,20 @@ export class PiVimEditor extends CustomEditor {
   }
 
   // ---- Main input handler ----
+  // Esc priority: cancel pending op → leave Insert → pass through to pi (abort).
+  // The last one is why double-tap Esc aborts streaming from Insert mode.
   handleInput(data: string): void {
     if (matchesKey(data, "escape")) {
-      this.pending = { type: "none" };
-      if (this.mode === "insert") this.mode = "normal";
+      if (this.pending.type !== "none") {
+        this.pending = { type: "none" };
+        return;
+      }
+      if (this.mode === "insert") {
+        this.mode = "normal";
+        return;
+      }
+      // Normal + no pending: let pi handle it (aborts streaming).
+      super.handleInput(data);
       return;
     }
     if (this.mode === "insert") { super.handleInput(data); return; }
