@@ -14,11 +14,15 @@ export type VimOperator = "delete" | "yank" | "change";
 /** Text object scope: inner (i) excludes delimiters, around (a) includes them. */
 export type TextObjectScope = "inner" | "around";
 
+/** Find/till char direction. f/F land on the char; t/T land adjacent to it. */
+export type FindKind = "f" | "t" | "F" | "T";
+
 /** The operator state machine. */
 export type VimPending =
   | { type: "none" }
   | { type: "operator"; operator: VimOperator }
-  | { type: "textobject"; operator: VimOperator; scope: TextObjectScope };
+  | { type: "textobject"; operator: VimOperator; scope: TextObjectScope }
+  | { type: "find"; find: FindKind; operator?: VimOperator };
 
 /** Text object targets selectable after i/a in operator-pending state. */
 export type VimTextObject =
@@ -32,6 +36,9 @@ export type VimTextObject =
   | "backtick";   // i` / a`
 
 /** Yanked text with register type (char vs linewise) controlling paste direction. */
+/** Last find motion, for ; and , to repeat/reverse. */
+export type LastFind = { find: FindKind; char: string };
+
 export type YankedText = {
   text: string;
   type: "char" | "line";

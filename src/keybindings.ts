@@ -14,6 +14,9 @@ export function buildKeybindingsMarkdown(): string {
 | \`h\` \`j\` \`k\` \`l\` | Left / Down / Up / Right |
 | \`w\` \`b\` \`e\` | Next word start / prev word start / word end |
 | \`0\` \`$\` | Line start / line end |
+| \`f\` \`F\` | Find next / prev char (e.g. \`f(\`) |
+| \`t\` \`T\` | Till before next / after prev char |
+| \`;\` \`,\` | Repeat last find / repeat reversed |
 
 **Operators** (type operator, then a motion or text object)
 | Key | Action |
@@ -38,11 +41,13 @@ export function buildKeybindingsMarkdown(): string {
 | Key | Action |
 |-----|--------|
 | \`x\` | Delete char under cursor |
+| \`X\` | Delete char before cursor |
 | \`s\` | Delete char, enter insert |
 | \`D\` | Delete to end of line |
 | \`C\` | Change to end of line |
 | \`Y\` | Yank line |
 | \`p\` | Paste after cursor |
+| \`u\` | Undo |
 
 **Insert mode**
 | Key | Action |
@@ -58,7 +63,7 @@ export function buildKeybindingsMarkdown(): string {
 | \`K\` | Show this reference |
 | \`Esc\` | Cancel pending operator |
 
-_Yanked text stays in the vim register for \`p\`._`;
+_Find/till also work as operator targets: \`df,\` deletes to next comma, \`ct(\` changes till before a paren._`;
 }
 
 /**
