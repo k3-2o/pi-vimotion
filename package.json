@@ -1,5 +1,5 @@
 {
-  "name": "pi-vim",
+  "name": "pi-vimotion",
   "version": "1.1.0",
   "description": "Modal vim editing for pi's prompt box — two modes, operators + text objects, find/till, buffer jumps",
   "keywords": [
@@ -11,7 +11,10 @@
     "keybindings"
   ],
   "homepage": "https://github.com/k3-2o/pi-vim",
-  "repository": "github:k3-2o/pi-vim",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k3-2o/pi-vim.git"
+  },
   "author": "k3-2o",
   "license": "MIT",
   "devDependencies": {
