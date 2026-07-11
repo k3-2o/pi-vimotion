@@ -22,7 +22,8 @@ export type VimPending =
   | { type: "none" }
   | { type: "operator"; operator: VimOperator }
   | { type: "textobject"; operator: VimOperator; scope: TextObjectScope }
-  | { type: "find"; find: FindKind; operator?: VimOperator };
+  | { type: "find"; find: FindKind; operator?: VimOperator }
+  | { type: "gpending"; operator?: VimOperator };
 
 /** Text object targets selectable after i/a in operator-pending state. */
 export type VimTextObject =
