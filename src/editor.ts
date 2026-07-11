@@ -8,7 +8,7 @@
 
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
-import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope } from "./types.ts";
+import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope, FindKind } from "./types.ts";
 import { firstNonBlankCol, findWordEnd } from "./motions.ts";
 import {
   type EdState,
@@ -35,12 +35,17 @@ const TEXT_OBJECTS: Record<string, VimTextObject> = {
   "`": "backtick",
 };
 
+// Find/till char trigger keys
+const FIND_KEYS = new Set(["f", "t", "F", "T"]);
+
 // ====================================================================
 // PiVimEditor
 // ====================================================================
 export class PiVimEditor extends CustomEditor {
   mode: VimMode = "insert"; // entry mode — seamless until first Esc
   pending: VimPending = { type: "none" };
+  /** Last find motion, for ; and , to repeat/reverse. */
+  lastFind: { find: FindKind; char: string } | null = null;
 
   /** Callback to show keybinding reference (triggered by K in normal mode) */
   onKeybindingsRequest?: () => void;
@@ -93,13 +98,17 @@ export class PiVimEditor extends CustomEditor {
   // Normal mode
   // ====================================================================
   private handleNormal(data: string): void {
-    // Resolve any pending operator / text-object state first
+    // Resolve any pending operator / text-object / find state first
     if (this.pending.type === "operator") {
       this.handleOperatorPending(this.pending.operator, data);
       return;
     }
     if (this.pending.type === "textobject") {
       this.handleTextObjectPending(this.pending.operator, this.pending.scope, data);
+      return;
+    }
+    if (this.pending.type === "find") {
+      this.handleFindPending(this.pending.find, this.pending.operator, data);
       return;
     }
 
@@ -121,6 +130,13 @@ export class PiVimEditor extends CustomEditor {
     // ---- Motions ----
     if (isMotion(data)) { this.applyMotion(data); return; }
 
+    // ---- Find / till char (standalone) ----
+    if (FIND_KEYS.has(data)) {
+      this.pending = { type: "find", find: data as FindKind };
+      return;
+    }
+    if (data === ";" || data === ",") { this.repeatFind(data === ","); return; }
+
     // ---- Single-stroke edits ----
     const s = this.st;
     switch (data) {
@@ -129,6 +145,15 @@ export class PiVimEditor extends CustomEditor {
         if (s.cursorCol < line.length) {
           const del = line[s.cursorCol];
           this.em("handleForwardDelete");
+          setYank(del, "char");
+        }
+        return;
+      }
+      case "X": {
+        const line = s.lines[s.cursorLine] ?? "";
+        if (s.cursorCol > 0) {
+          const del = line[s.cursorCol - 1];
+          this.em("handleBackspace");
           setYank(del, "char");
         }
         return;
@@ -175,6 +200,7 @@ export class PiVimEditor extends CustomEditor {
 
     // ---- Misc ----
     if (data === "K") { this.onKeybindingsRequest?.(); return; }
+    if (data === "u") { this.em("undo"); return; }
 
     // Unrecognized printable: ignore; control keys fall through
     if (data.length === 1 && data.charCodeAt(0) >= 32) return;
@@ -191,11 +217,25 @@ export class PiVimEditor extends CustomEditor {
       this.applyOperatorToLine(op);
       return;
     }
-    // Esc / cancel — anything that isn't a motion or i/a prefix cancels
-    if (!isMotion(data) && data !== "i" && data !== "a") {
+    // Esc / cancel — anything that isn't a motion, i/a prefix, or find cancels
+    if (!isMotion(data) && data !== "i" && data !== "a" && !FIND_KEYS.has(data) && data !== ";" && data !== ",") {
       this.pending = { type: "none" };
       if (data.length === 1 && data.charCodeAt(0) >= 32) return;
       super.handleInput(data);
+      return;
+    }
+    // Find/till under operator (df{ch}, dt{ch}, ...)
+    if (FIND_KEYS.has(data)) {
+      this.pending = { type: "find", find: data as FindKind, operator: op };
+      return;
+    }
+    // ; / , under operator: apply to last find target
+    if (data === ";" || data === ",") {
+      this.pending = { type: "none" };
+      if (this.lastFind) {
+        const kind = data === "," ? reverseFind(this.lastFind.find) : this.lastFind.find;
+        this.resolveFind(kind, this.lastFind.char, op);
+      }
       return;
     }
     // Text object scope prefix
@@ -206,6 +246,49 @@ export class PiVimEditor extends CustomEditor {
     // Motion
     this.pending = { type: "none" };
     this.applyOperatorToMotion(op, data);
+  }
+
+  // ====================================================================
+  // Find/till char (f t F T)
+  // ====================================================================
+  private handleFindPending(find: FindKind, op: VimOperator | undefined, data: string): void {
+    this.pending = { type: "none" };
+    // Esc or non-printable cancels; pass control keys through
+    if (data.length !== 1 || data.charCodeAt(0) < 32) {
+      super.handleInput(data);
+      return;
+    }
+    this.resolveFind(find, data, op);
+  }
+
+  /** Repeat last find. reverse=true flips direction (,). */
+  private repeatFind(reverse: boolean) {
+    if (!this.lastFind) return;
+    const kind = reverse ? reverseFind(this.lastFind.find) : this.lastFind.find;
+    this.resolveFind(kind, this.lastFind.char, undefined);
+  }
+
+  /** Apply a find motion, optionally as an operator target. */
+  private resolveFind(find: FindKind, ch: string, op: VimOperator | undefined) {
+    const s = this.st;
+    const line = s.lines[s.cursorLine] ?? "";
+    const target = findCharOnLine(line, s.cursorCol, ch, find);
+    if (target < 0) return; // char not found on line — no-op
+    this.lastFind = { find, char: ch };
+
+    if (op === undefined) {
+      s.cursorCol = target;
+      return;
+    }
+
+    const isBackward = find === "F" || find === "T";
+    // f/F include the found char; t/T land adjacent so +1 excludes it.
+    // Backward motions include the cursor's char (endCol = cursor + 1).
+    if (isBackward) {
+      this.applyOperatorToRange(op, s.cursorLine, target, s.cursorLine, s.cursorCol + 1);
+    } else {
+      this.applyOperatorToRange(op, s.cursorLine, s.cursorCol, s.cursorLine, target + 1);
+    }
   }
 
   // ====================================================================
@@ -309,6 +392,29 @@ function operatorOf(key: string): VimOperator {
 
 function operatorKey(op: VimOperator): string {
   return op === "delete" ? "d" : op === "yank" ? "y" : "c";
+}
+
+/** Find target column for f/t/F/T. Returns -1 if not found on line. */
+function findCharOnLine(line: string, fromCol: number, ch: string, kind: FindKind): number {
+  switch (kind) {
+    case "f": // next occurrence of ch after cursor
+      for (let i = fromCol + 1; i < line.length; i++) if (line[i] === ch) return i;
+      return -1;
+    case "F": // previous occurrence of ch before cursor
+      for (let i = fromCol - 1; i >= 0; i--) if (line[i] === ch) return i;
+      return -1;
+    case "t": // position just before next ch
+      for (let i = fromCol + 1; i < line.length; i++) if (line[i] === ch) return i - 1;
+      return -1;
+    case "T": // position just after previous ch
+      for (let i = fromCol - 1; i >= 0; i--) if (line[i] === ch) return i + 1;
+      return -1;
+  }
+}
+
+/** Reverse a find direction for ,. f<->F, t<->T. */
+function reverseFind(kind: FindKind): FindKind {
+  return kind === "f" ? "F" : kind === "F" ? "f" : kind === "t" ? "T" : "t";
 }
 
 /** Extract text between two positions for yank. */
