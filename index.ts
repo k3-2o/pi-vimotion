@@ -2,18 +2,43 @@
  * pi-vim — Modal vim editing for pi's prompt box.
  *
  * Vim mode is OFF by default. Use /vim to toggle it on/off.
- * Two modes only: Normal and Insert. Reload with /reload to activate.
+ * The preference persists across sessions and reloads via ~/.pi/vim-enabled.
+ * Two modes only: Normal and Insert.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { existsSync, writeFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { PiVimEditor } from "./src/editor.ts";
 import type { VimMode } from "./src/types.ts";
 import { resetState } from "./src/ops.ts";
 import { createKeybindingsComponent } from "./src/keybindings.ts";
 
+const VIM_PREF_FILE = join(getAgentDir(), "vim-enabled");
+
+/** Read the persisted vim preference. Presence of file = enabled. */
+function readVimPref(): boolean {
+  try {
+    return existsSync(VIM_PREF_FILE);
+  } catch {
+    return false;
+  }
+}
+
+/** Persist (or clear) the vim preference. */
+function writeVimPref(enabled: boolean) {
+  try {
+    if (enabled) writeFileSync(VIM_PREF_FILE, "");
+    else if (existsSync(VIM_PREF_FILE)) unlinkSync(VIM_PREF_FILE);
+  } catch {
+    // Non-fatal: in-memory state still works for the session.
+  }
+}
+
 export default function (pi: ExtensionAPI) {
-  let vimActive = false;
+  // Seed from persisted preference so /reload preserves the on/off state.
+  let vimActive = readVimPref();
 
   const updateStatus = (ctx: ExtensionContext, theme: any, mode: VimMode) => {
     const label = mode === "normal" ? "Vim: Normal" : "Vim: Insert";
@@ -67,17 +92,24 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       if (vimActive) {
         vimActive = false;
+        writeVimPref(false);
         deactivateVim(ctx);
       } else {
         vimActive = true;
+        writeVimPref(true);
         activateVim(ctx);
       }
     },
   });
 
-  // Clear vim state on session shutdown so it resets on new session
+  // Re-activate vim on session start if the preference says it should be on.
+  // Covers startup, /reload, /new, /resume, /fork — all fire session_start.
+  pi.on("session_start", async (_event, ctx) => {
+    if (vimActive) activateVim(ctx);
+  });
+
+  // Clear vim yank buffer on session shutdown; keep the preference itself.
   pi.on("session_shutdown", () => {
-    vimActive = false;
     resetState();
   });
 }
