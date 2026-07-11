@@ -41,7 +41,6 @@ export function buildKeybindingsMarkdown(): string {
 | Key | Action |
 |-----|--------|
 | \`x\` | Delete char under cursor |
-| \`X\` | Delete char before cursor |
 | \`s\` | Delete char, enter insert |
 | \`D\` | Delete to end of line |
 | \`C\` | Change to end of line |
