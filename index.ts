@@ -2,32 +2,22 @@
  * pi-vim — Modal vim editing for pi's prompt box.
  *
  * Vim mode is OFF by default. Use /vim to toggle it on/off.
- * Reload with /reload to activate.
+ * Two modes only: Normal and Insert. Reload with /reload to activate.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { PiVimEditor } from "./src/editor.ts";
-import type { VimMode, VisualType } from "./src/types.ts";
+import type { VimMode } from "./src/types.ts";
 import { resetState } from "./src/ops.ts";
 import { createKeybindingsComponent } from "./src/keybindings.ts";
 
 export default function (pi: ExtensionAPI) {
   let vimActive = false;
 
-  const updateStatus = (ctx: ExtensionContext, theme: any, mode: VimMode, vt: VisualType) => {
-    let label: string;
-    let color: string;
-    if (mode === "normal") {
-      label = "Vim: Normal";
-      color = "accent";
-    } else if (mode === "visual") {
-      label = vt === "line" ? "Vim: v-line" : "Vim: Visual";
-      color = "warning";
-    } else {
-      label = "Vim: Insert";
-      color = "success";
-    }
+  const updateStatus = (ctx: ExtensionContext, theme: any, mode: VimMode) => {
+    const label = mode === "normal" ? "Vim: Normal" : "Vim: Insert";
+    const color = mode === "normal" ? "accent" : "success";
     ctx.ui.setStatus("pi-vim", theme.fg(color, label));
   };
 
@@ -42,13 +32,10 @@ export default function (pi: ExtensionAPI) {
       const editor = new PiVimEditor(tui, editorTheme, keybindings);
       const origHandle = editor.handleInput.bind(editor);
       editor.handleInput = (data: string) => {
-        const prevMode = (editor as any).mode as VimMode;
-        const prevVt = (editor as any).visualType as VisualType;
+        const prevMode = editor.mode;
         origHandle(data);
-        const newMode = (editor as any).mode as VimMode;
-        const newVt = (editor as any).visualType as VisualType;
-        if (newMode !== prevMode || (newMode === "visual" && newVt !== prevVt)) {
-          updateStatus(ctx, theme, newMode, newVt);
+        if (editor.mode !== prevMode) {
+          updateStatus(ctx, theme, editor.mode);
         }
       };
       // K in normal mode shows keybinding reference (blocks during streaming)
@@ -58,14 +45,14 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         ctx.ui.custom<null>(
-          (tui2, theme, _kb, done) =>
-            createKeybindingsComponent(theme, getMarkdownTheme(), done, () => tui2.requestRender()),
+          (tui2, _theme, _kb, done) =>
+            createKeybindingsComponent(getMarkdownTheme(), done, () => tui2.requestRender()),
         );
       };
       return editor;
     });
 
-    updateStatus(ctx, theme, "insert", "char");
+    updateStatus(ctx, theme, "insert");
     ctx.ui.notify("Vim mode on — Esc for Normal mode", "info");
   };
 

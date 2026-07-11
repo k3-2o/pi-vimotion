@@ -1,6 +1,6 @@
 /**
  * Keybinding reference for pi-vim.
- * Renders as a Markdown component wrapped in a scrollable/dismissable overlay.
+ * Renders as a Markdown component wrapped in a dismissable overlay.
  */
 
 import { Markdown, matchesKey, type Component } from "@earendil-works/pi-tui";
@@ -11,65 +11,60 @@ export function buildKeybindingsMarkdown(): string {
 **Motions**
 | Key | Action |
 |-----|--------|
-| \`h\` / \`j\` / \`k\` / \`l\` | Left / Down / Up / Right |
-| \`w\` / \`b\` / \`e\` / \`ge\` | Word fwd / bwd / word end / word end bwd |
-| \`0\` / \`$\` / \`^\` / \`g_\` | Line start / end / first non-blank / last non-blank |
-| \`gg\` / \`G\` / \`{N}G\` | First line / last line / go to line N |
-| \`{\` / \`}\` | Paragraph backward / forward |
+| \`h\` \`j\` \`k\` \`l\` | Left / Down / Up / Right |
+| \`w\` \`b\` \`e\` | Next word start / prev word start / word end |
+| \`0\` \`$\` | Line start / line end |
 
-**Operators** (prepend before motion, e.g. \`dw\`, \`y$\`)
+**Operators** (type operator, then a motion or text object)
 | Key | Action |
 |-----|--------|
-| \`d\` + motion | Delete from cursor through motion |
-| \`y\` + motion | Yank (copy) from cursor through motion |
-| \`c\` + motion | Change (delete + insert mode) through motion |
+| \`d\` + motion | Delete (e.g. \`dw\`, \`d$\`) |
+| \`y\` + motion | Yank (e.g. \`yw\`, \`y$\`) |
+| \`c\` + motion | Change — delete + insert (e.g. \`cw\`) |
+| \`dd\` \`yy\` \`cc\` | Delete / yank / change whole line |
 
-**Line Operations**
+**Text objects** (after \`d\`/\`y\`/\`c\`, type \`i\` or \`a\` then a char)
 | Key | Action |
 |-----|--------|
-| \`dd\` / \`yy\` / \`cc\` | Delete / yank / change whole line |
-| \`D\` / \`C\` / \`Y\` | Delete / change / yank to end of line(s) |
-| \`p\` / \`P\` | Paste after / before cursor |
+| \`iw\` \`aw\` | Inner word / a word (with trailing space) |
+| \`i(\` \`a(\` | Inside / around parentheses |
+| \`i[\` \`a[\` | Inside / around brackets |
+| \`i{\` \`a{\` | Inside / around braces |
+| \`i"\` \`a"\` | Inside / around double quotes |
+| \`i'\` \`a'\` | Inside / around single quotes |
+| \`i\\\`\` \`a\\\`\` | Inside / around backticks |
 
-**Insert Mode**
+**Single-stroke edits**
 | Key | Action |
 |-----|--------|
-| \`i\` / \`a\` | Insert before / after cursor |
-| \`I\` / \`A\` | Insert at start / append at end of line |
-| \`o\` / \`O\` | Open line below / above |
-| \`s\` / \`S\` | Substitute char / substitute line |
+| \`x\` | Delete char under cursor |
+| \`s\` | Delete char, enter insert |
+| \`D\` | Delete to end of line |
+| \`C\` | Change to end of line |
+| \`Y\` | Yank line |
+| \`p\` | Paste after cursor |
 
-**Visual Mode**
+**Insert mode**
 | Key | Action |
 |-----|--------|
-| \`v\` / \`V\` | Visual char mode / visual line mode |
-| \`v\` / \`V\` (toggle) | Switch between char and line selection |
-| \`d\` / \`x\` / \`y\` / \`c\` | Delete / cut / yank / change selection |
-| \`Esc\` | Cancel visual selection |
+| \`i\` \`a\` | Insert before / after cursor |
+| \`I\` \`A\` | Insert at first non-blank / append at line end |
+| \`o\` \`O\` | Open line below / above |
+| \`Esc\` | Back to normal mode |
 
-**Editing**
+**Other**
 | Key | Action |
 |-----|--------|
-| \`x\` / \`X\` | Delete char forward / backward |
-| \`u\` | Undo |
-| \`.\` | Repeat last operation |
-| \`g\` prefix | \`gg\` (goto top), \`g_\` (last non-blank), \`ge\` (word end bwd) |
-| \`K\` | Show this keybinding reference |
-| \`Esc\` | Back to normal mode / cancel operation |
+| \`K\` | Show this reference |
+| \`Esc\` | Cancel pending operator |
 
-**Tips**
-• Prefix with a number to repeat, e.g. \`3j\` = down 3 lines, \`d2w\` = delete 2 words
-• \`3Y\` yanks 3 lines, \`3D\` / \`3C\` deletes / changes 3 lines down
-• Operators + motion work in visual mode motions too
-• Yanked text is copied to your system clipboard
-• \`V\` + \`j\`/\`k\` selects whole lines; \`d\` deletes them, \`y\` yanks them`;
+_Yanked text stays in the vim register for \`p\`._`;
 }
 
 /**
  * Create a component that renders the keybinding markdown and handles keyboard.
  */
 export function createKeybindingsComponent(
-  theme: any,
   mdTheme: any,
   done: (value: null) => void,
   requestRender: () => void,
@@ -85,15 +80,6 @@ export function createKeybindingsComponent(
     },
     handleInput(data: string): void {
       if (matchesKey(data, "escape") || data === "q") {
-        done(null);
-        return;
-      }
-      if (data === "j" || matchesKey(data, "down") || matchesKey(data, "pageDown")) {
-        // Let the Markdown component scroll if it supports it, or just dismiss
-        done(null);
-        return;
-      }
-      if (data === "k" || matchesKey(data, "up") || matchesKey(data, "pageUp")) {
         done(null);
         return;
       }

@@ -1,26 +1,38 @@
-/** Vim mode indicator */
-export type VimMode = "normal" | "insert" | "visual";
+/**
+ * Type definitions for pi-vim.
+ *
+ * Two modes only: Normal and Insert. No visual mode.
+ * Operators compose with motions and text objects.
+ */
 
-/** Visual selection granularity */
-export type VisualType = "char" | "line";
+/** Editor mode. Insert is the home/entry mode; Normal routes keys to motions/operators. */
+export type VimMode = "normal" | "insert";
 
-/** Pending operator type */
-export type OperatorType = "d" | "y" | "c" | null;
+/** Operator-pending verbs. */
+export type VimOperator = "delete" | "yank" | "change";
 
-/** Pending prefix type */
-export type PrefixType = "g" | null;
+/** Text object scope: inner (i) excludes delimiters, around (a) includes them. */
+export type TextObjectScope = "inner" | "around";
 
-/** Yanked text with mode info */
+/** The operator state machine. */
+export type VimPending =
+  | { type: "none" }
+  | { type: "operator"; operator: VimOperator }
+  | { type: "textobject"; operator: VimOperator; scope: TextObjectScope };
+
+/** Text object targets selectable after i/a in operator-pending state. */
+export type VimTextObject =
+  | "word"        // iw / aw — small word (alphanumeric + underscore)
+  | "bigWord"     // iW / aW — WORD (non-whitespace run)
+  | "parens"      // i( / a( — ( ... )
+  | "brackets"    // i[ / a[ — [ ... ]
+  | "braces"      // i{ / a{ — { ... }
+  | "doubleQuote" // i" / a"
+  | "singleQuote" // i' / a'
+  | "backtick";   // i` / a`
+
+/** Yanked text with register type (char vs linewise) controlling paste direction. */
 export type YankedText = {
   text: string;
   type: "char" | "line";
-};
-
-/** Replayable operation for dot-repeat */
-export type ReplayOp = {
-  kind: string;
-  count?: number;
-  motion?: string;
-  text?: string;
-  visualType?: VisualType;
 };
