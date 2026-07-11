@@ -7,14 +7,14 @@ and buffer jumps. Vim mode is **off by default** — toggle it with `/vim`.
 
 Press `K` in normal mode to see the full keybinding reference.
 
-https://github.com/k3-2o/pi-vim
+https://github.com/k3-2o/pi-vimotion
 
 ## Install
 
 ### Manual (clone into extensions)
 
 ```bash
-git clone https://github.com/k3-2o/pi-vim.git ~/.pi/agent/extensions/pi-vim
+git clone https://github.com/k3-2o/pi-vimotion.git ~/.pi/agent/extensions/pi-vim
 ```
 
 Then `/reload` in pi.
@@ -22,7 +22,7 @@ Then `/reload` in pi.
 ### Via pi package manager
 
 ```bash
-pi install pi-vim
+pi install pi-vimotion
 ```
 
 (Requires the package to be published — coming soon.)

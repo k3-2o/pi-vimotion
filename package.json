@@ -10,10 +10,10 @@
     "modal-editor",
     "keybindings"
   ],
-  "homepage": "https://github.com/k3-2o/pi-vim",
+  "homepage": "https://github.com/k3-2o/pi-vimotion",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/k3-2o/pi-vim.git"
+    "url": "git+https://github.com/k3-2o/pi-vimotion.git"
   },
   "author": "k3-2o",
   "license": "MIT",
