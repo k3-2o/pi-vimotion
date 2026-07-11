@@ -2,8 +2,10 @@
 
 Modal vim editing for [pi](https://pi.dev)'s prompt box.
 
-Turn your pi input into a vim editor — motions, operators, visual mode,
-dot-repeat, count prefixes, and system clipboard integration. Press `K` in normal mode to see all available keys.
+Two modes, operators that compose with motions and text objects, find/till,
+and buffer jumps. Vim mode is **off by default** — toggle it with `/vim`.
+
+Press `K` in normal mode to see the full keybinding reference.
 
 https://github.com/k3-2o/pi-vim
 
@@ -27,15 +29,26 @@ pi install pi-vim
 
 ## Quick Start
 
-| What               | How                                    |
-|--------------------|----------------------------------------|
-| Enter normal mode  | `escape`                               |
-| Enter insert mode  | `i` / `a` / `I` / `A` / `o` / `O` / `s` / `S` |
-| Enter visual mode  | `v` (character) or `V` (line)          |
-| Back to normal     | `escape` (from insert or visual)       |
-| Show keybindings   | `K` in normal mode                       |
-| Repeat last op     | `.`                                    |
-| Undo               | `u`                                    |
+| What               | How                              |
+|--------------------|----------------------------------|
+| Turn vim on/off    | `/vim` (persists across sessions)|
+| Enter normal mode  | `escape`                         |
+| Enter insert mode  | `i` / `a` / `I` / `A` / `o` / `O`|
+| Show keybindings   | `K` in normal mode               |
+| Undo               | `u`                              |
+| Abort streaming    | double-tap `escape` from insert  |
+
+## Design
+
+pi-vim is deliberately minimal. It mirrors the vim model used in
+OpenAI Codex's composer: two modes (Normal + Insert), no visual mode,
+no dot-repeat, no registers. Selection-style editing is handled by
+operators + text objects instead.
+
+The implementation layers on top of pi's built-in editor wherever
+possible — many motions and single-stroke edits delegate to pi's own
+commands. Only the genuinely vim-specific parts (operators composing
+with motions, text objects, find/till, the yank register) are custom.
 
 ## Features
 
@@ -43,98 +56,108 @@ pi install pi-vim
 
 | Keys | Action |
 |------|--------|
-| `h` / `j` / `k` / `l` | Left / Down / Up / Right |
-| `w` / `b` / `e` / `ge` | Word forward / backward / word end / word end backward |
-| `0` / `$` / `^` / `g_` | Line start / line end / first non-blank / last non-blank |
-| `gg` / `G` / `{N}G` | First line / last line / go to line N |
-| `{` / `}` | Paragraph backward / forward |
-
-Prefix any motion with a number to repeat, e.g. `3j` = down 3 lines, `d2w` = delete 2 words.
+| `h` `j` `k` `l` | Left / Down / Up / Right |
+| `w` `b` `e` | Word forward / backward / word end |
+| `0` `$` | Line start / line end |
+| `f` `F` | Find next / previous char (`f(` → next paren) |
+| `t` `T` | Till before next / after previous char |
+| `;` `,` | Repeat last find / repeat reversed |
+| `gg` `G` | First line / last line |
 
 ### Operators
 
 | Keys | Action |
 |------|--------|
-| `d` + motion | Delete from cursor through motion |
-| `y` + motion | Yank (copy) from cursor through motion |
-| `c` + motion | Change (delete + insert mode) through motion |
-| `dd` / `yy` / `cc` | Delete / yank / change whole line |
-| `D` / `C` / `Y` | Delete / change / yank to end of line(s) |
-| `p` / `P` | Paste after / before cursor |
+| `d` + motion | Delete (e.g. `dw`, `d$`, `df,`) |
+| `y` + motion | Yank (e.g. `yw`, `y$`) |
+| `c` + motion | Change — delete + insert (e.g. `cw`) |
+| `dd` `yy` `cc` | Delete / yank / change whole line |
+| `dj` `dk` | Delete current + next / previous line (linewise) |
+| `dG` `dgg` | Delete to end / start of buffer (linewise) |
+| `D` `C` `Y` | Delete / change / yank to end of line |
+| `p` | Paste after cursor (linewise or charwise depending on yank) |
 
-Operators respect count: `3Y` yanks 3 lines, `3D` / `3C` deletes / changes 3 lines down.
+### Text Objects
 
-### Visual Mode
+The power feature. After `d` / `y` / `c`, type `i` (inner) or `a` (around)
+then a target:
 
 | Keys | Action |
 |------|--------|
-| `v` | Visual character mode — select individual characters |
-| `V` (Shift+v) | Visual line mode — select whole lines |
-| `v` / `V` (toggle) | Switch between char and line selection while in visual mode |
-| `d` / `x` | Delete (cut) the selection |
-| `y` | Yank (copy) the selection — also goes to system clipboard |
-| `c` | Change (delete + enter insert mode) |
-| `escape` | Cancel visual selection |
+| `iw` `aw` | Inner word / a word (with trailing space) |
+| `i(` `a(` | Inside / around parentheses |
+| `i[` `a[` | Inside / around brackets |
+| `i{` `a{` | Inside / around braces |
+| `i"` `a"` | Inside / around double quotes |
+| `i'` `a'` | Inside / around single quotes |
+| `` i` `` `` a` `` | Inside / around backticks |
+
+Examples: `di(` deletes the contents of a function call, `ci"` changes
+a quoted string, `da{` deletes a brace block and the braces.
+
+### Single-Stroke Edits
+
+| Keys | Action |
+|------|--------|
+| `x` | Delete char under cursor |
+| `s` | Delete char, enter insert |
+| `D` `C` `Y` | Delete / change / yank to end of line |
+| `p` | Paste after cursor |
+| `u` | Undo |
 
 ### Insert Mode
 
 All standard pi keybindings work in insert mode (`ctrl+w` delete word,
-`ctrl+k` kill line, etc.).
+`ctrl+k` kill line, `ctrl+y` paste, etc.).
 
 | Keys | Action |
 |------|--------|
-| `i` / `a` | Insert before / after cursor |
-| `I` / `A` | Insert at line start / append at line end |
-| `o` / `O` | Open new line below / above |
-| `s` / `S` | Substitute character / substitute line |
+| `i` `a` | Insert before / after cursor |
+| `I` `A` | Insert at first non-blank / append at line end |
+| `o` `O` | Open new line below / above |
+| `escape` | Back to normal mode |
 
-### Editing
+### Other
 
 | Keys | Action |
 |------|--------|
-| `x` / `X` | Delete character forward / backward |
-| `u` | Undo |
-| `.` | Repeat last operation |
-| `g` prefix | `gg` (goto top), `g_` (last non-blank), `ge` (word end backward) |
-| `K` | Show this keybinding reference overlay |
-| `escape` | Back to normal mode / cancel operation |
-
-## Tips
-
-- **Count prefix** — type a number before any motion or operator: `3j` (down 3),
-  `d2w` (delete 2 words), `5yy` (yank 5 lines)
-- **`Y`/`D`/`C` respect counts** — `3Y` yanks 3 lines, `3D` deletes 3 lines down
-- **Visual line mode** — `V` then `j`/`k` selects whole lines; `d` deletes them,
-  `y` yanks them to clipboard
-- **System clipboard** — yanked text is copied to your system clipboard. Paste
-  outside pi with `ctrl+v` / `cmd+v`.
-- **Operators in visual mode** — after selecting with `v`/`V`, use `d`/`y`/`c`
-  to operate on the selection. Motions like `w`/`b`/`$` work too.
+| `K` | Show keybinding reference overlay |
+| `escape` | Cancel pending operator / leave insert |
+| double `escape` | Abort streaming (from insert mode) |
 
 ## Status Indicator
 
-Pi-vim shows your current mode in the footer:
+Pi-vim shows the current mode in the footer:
 
 | Mode | Indicator |
 |------|-----------|
-| Normal | `vim: normal` (accent color) |
-| Visual (char) | `vim: visual` (warning color) |
-| Visual (line) | `vim: V-LINE` (warning color) |
-| Insert | `vim: insert` (success color) |
+| Normal | `Vim: Normal` (accent) |
+| Insert | `Vim: Insert` (success) |
+
+## What's Not Included (and why)
+
+- **Visual mode** — replaced by operators + text objects; avoids custom
+  rendering that conflicted with pi's line layout.
+- **Count prefixes (`3w`, `d2w`)** — rarely useful in a prompt-sized buffer.
+- **Dot-repeat (`.`)** — high complexity for a feature that earns its keep
+  in long source files, not input boxes.
+- **Registers / named registers** — pi's built-in kill ring covers the
+  common paste cases.
+- **Redo (`ctrl+r`)** — pi's base editor has no redo primitive.
 
 ## Files
 
 ```
 pi-vim/
-├── index.ts            — Extension entry point, wires everything together
+├── index.ts            — Extension entry: /vim command, persistence, wiring
 ├── README.md
 ├── package.json
 └── src/
-    ├── editor.ts       — PiVimEditor: handles key dispatch, modes, visual ops
-    ├── keybindings.ts  — Keybinding reference data + markdown overlay component
-    ├── motions.ts      — Cursor motion helpers (word, paragraph, etc.)
-    ├── ops.ts          — Text operations (delete, yank, change, paste, undo, repeat)
-    └── types.ts        — Shared types (VimMode, VisualType, ReplayOp)
+    ├── editor.ts       — PiVimEditor: modes, key dispatch, operator state machine
+    ├── keybindings.ts  — Keybinding reference + markdown overlay component
+    ├── motions.ts      — Char classification + word-end helper
+    ├── ops.ts          — Text operations: delete/yank/paste, text object ranges
+    └── types.ts        — Shared types (VimMode, VimOperator, VimPending, ...)
 ```
 
 ## License

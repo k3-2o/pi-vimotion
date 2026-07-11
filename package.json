@@ -1,7 +1,7 @@
 {
   "name": "pi-vim",
-  "version": "1.0.0",
-  "description": "Modal vim editing for pi's prompt box — motions, operators, visual mode, dot-repeat, system clipboard",
+  "version": "1.1.0",
+  "description": "Modal vim editing for pi's prompt box — two modes, operators + text objects, find/till, buffer jumps",
   "keywords": [
     "pi",
     "pi-extension",

@@ -111,6 +111,10 @@ export class PiVimEditor extends CustomEditor {
       this.handleFindPending(this.pending.find, this.pending.operator, data);
       return;
     }
+    if (this.pending.type === "gpending") {
+      this.handleGpending(this.pending.operator, data);
+      return;
+    }
 
     // ---- Insert transitions ----
     switch (data) {
@@ -137,6 +141,10 @@ export class PiVimEditor extends CustomEditor {
     }
     if (data === ";" || data === ",") { this.repeatFind(data === ","); return; }
 
+    // ---- Buffer jumps ----
+    if (data === "G") { this.jumpLine(this.st.lines.length - 1, undefined); return; }
+    if (data === "g") { this.pending = { type: "gpending" }; return; }
+
     // ---- Single-stroke edits ----
     const s = this.st;
     switch (data) {
@@ -145,15 +153,6 @@ export class PiVimEditor extends CustomEditor {
         if (s.cursorCol < line.length) {
           const del = line[s.cursorCol];
           this.em("handleForwardDelete");
-          setYank(del, "char");
-        }
-        return;
-      }
-      case "X": {
-        const line = s.lines[s.cursorLine] ?? "";
-        if (s.cursorCol > 0) {
-          const del = line[s.cursorCol - 1];
-          this.em("handleBackspace");
           setYank(del, "char");
         }
         return;
@@ -217,8 +216,8 @@ export class PiVimEditor extends CustomEditor {
       this.applyOperatorToLine(op);
       return;
     }
-    // Esc / cancel — anything that isn't a motion, i/a prefix, or find cancels
-    if (!isMotion(data) && data !== "i" && data !== "a" && !FIND_KEYS.has(data) && data !== ";" && data !== ",") {
+    // Esc / cancel — anything that isn't a motion, i/a prefix, find, or g/G cancels
+    if (!isMotion(data) && data !== "i" && data !== "a" && !FIND_KEYS.has(data) && data !== ";" && data !== "," && data !== "g" && data !== "G") {
       this.pending = { type: "none" };
       if (data.length === 1 && data.charCodeAt(0) >= 32) return;
       super.handleInput(data);
@@ -236,6 +235,17 @@ export class PiVimEditor extends CustomEditor {
         const kind = data === "," ? reverseFind(this.lastFind.find) : this.lastFind.find;
         this.resolveFind(kind, this.lastFind.char, op);
       }
+      return;
+    }
+    // G under operator: linewise to last line (dG, yG, cG)
+    if (data === "G") {
+      this.pending = { type: "none" };
+      this.jumpLine(this.st.lines.length - 1, op);
+      return;
+    }
+    // g under operator: wait for second g (dgg, ygg, cgg)
+    if (data === "g") {
+      this.pending = { type: "gpending", operator: op };
       return;
     }
     // Text object scope prefix
@@ -289,6 +299,41 @@ export class PiVimEditor extends CustomEditor {
     } else {
       this.applyOperatorToRange(op, s.cursorLine, s.cursorCol, s.cursorLine, target + 1);
     }
+  }
+
+  // ====================================================================
+  // Buffer jumps (gg / G)
+  // ====================================================================
+  private handleGpending(op: VimOperator | undefined, data: string): void {
+    this.pending = { type: "none" };
+    if (data === "g") {
+      this.jumpLine(0, op);
+      return;
+    }
+    // Any other key cancels; pass control keys through.
+    if (data.length === 1 && data.charCodeAt(0) >= 32) return;
+    super.handleInput(data);
+  }
+
+  /** Jump to a line (0-indexed), optionally as a linewise operator target. */
+  private jumpLine(targetLine: number, op: VimOperator | undefined) {
+    const s = this.st;
+    const clamped = Math.max(0, Math.min(targetLine, s.lines.length - 1));
+
+    if (op === undefined) {
+      s.cursorLine = clamped;
+      s.cursorCol = firstNonBlankCol(s.lines[clamped] ?? "");
+      return;
+    }
+
+    // Linewise: like dj/dk but to a buffer boundary.
+    const lo = Math.min(s.cursorLine, clamped);
+    const count = Math.abs(clamped - s.cursorLine) + 1;
+    setYank(s.lines.slice(lo, lo + count).join("\n"), "line");
+    if (op === "yank") return; // yank doesn't move cursor
+    s.cursorLine = lo;
+    deleteLines(this.edState, count);
+    if (op === "change") this.mode = "insert";
   }
 
   // ====================================================================

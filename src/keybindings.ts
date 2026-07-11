@@ -17,6 +17,7 @@ export function buildKeybindingsMarkdown(): string {
 | \`f\` \`F\` | Find next / prev char (e.g. \`f(\`) |
 | \`t\` \`T\` | Till before next / after prev char |
 | \`;\` \`,\` | Repeat last find / repeat reversed |
+| \`gg\` \`G\` | First line / last line |
 
 **Operators** (type operator, then a motion or text object)
 | Key | Action |
@@ -62,7 +63,8 @@ export function buildKeybindingsMarkdown(): string {
 | \`K\` | Show this reference |
 | \`Esc\` | Cancel pending operator |
 
-_Find/till also work as operator targets: \`df,\` deletes to next comma, \`ct(\` changes till before a paren._`;
+_Find/till also work as operator targets: \`df,\` deletes to next comma, \`ct(\` changes till before a paren._
+_Buffer jumps too: \`dG\` deletes to end of buffer, \`ygg\` yanks back to the top._`;
 }
 
 /**
