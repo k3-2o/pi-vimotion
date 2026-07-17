@@ -102,6 +102,21 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerShortcut("ctrl+;", {
+    description: "Toggle vim mode",
+    handler: async (ctx) => {
+      if (vimActive) {
+        vimActive = false;
+        writeVimPref(false);
+        deactivateVim(ctx);
+      } else {
+        vimActive = true;
+        writeVimPref(true);
+        activateVim(ctx);
+      }
+    },
+  });
+
   // Re-activate vim on session start if the preference says it should be on.
   // Covers startup, /reload, /new, /resume, /fork — all fire session_start.
   pi.on("session_start", async (_event, ctx) => {
