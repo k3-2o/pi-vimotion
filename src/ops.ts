@@ -266,8 +266,13 @@ function pairedObjectRange(
     } else if (ch === close) {
       const openIdx = stack.pop();
       if (openIdx === undefined) continue;
+      // innermost: among enclosing pairs, keep the smallest span (outer
+      // pairs close last in the left-to-right scan and would overwrite).
       if (openIdx <= cursorOffset && cursorOffset <= i) {
-        best = { open: openIdx, close: i };
+        const span = i - openIdx;
+        if (best === null || span < best.close - best.open) {
+          best = { open: openIdx, close: i };
+        }
       }
     }
   }
