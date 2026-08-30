@@ -148,14 +148,14 @@ export class PiVimEditor extends CustomEditor {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
         this.em("deleteToEndOfLine");
-        setYank(deleted, "char");
+        if (deleted) setYank(deleted, "char"); // nothing deleted -> leave the register alone
         return;
       }
       case "C": {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
         this.em("deleteToEndOfLine");
-        setYank(deleted, "char");
+        if (deleted) setYank(deleted, "char");
         this.mode = "insert";
         return;
       }
