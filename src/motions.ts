@@ -1,3 +1,5 @@
+import type { FindKind } from "./types.ts";
+
 export function isWordChar(ch: string | undefined): boolean {
   if (ch === undefined || ch === "") return false;
   return /[a-zA-Z0-9_]/.test(ch);
