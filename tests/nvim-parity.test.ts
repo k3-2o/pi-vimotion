@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   type Case, hasNvim, runNvim, opMotion, opTextObject, opFind,
 } from "./nvim-parity-helpers.ts";
-import { type EdState, setYank, pasteAfter, deleteLines } from "../src/ops.ts";
-import { findWordEnd, findCharOnLine, firstNonBlankCol } from "../src/motions.ts";
+import { type EdState, setYank, pasteAfter, pasteBefore, joinLines, deleteLines, graphemeBefore } from "../src/ops.ts";
+import { findWordEnd, findWordEndForward, findCharOnLine, firstNonBlankCol } from "../src/motions.ts";
 
 function cursorAt(s: EdState, line: number, col: number): void {
   s.cursorLine = line;
@@ -67,7 +67,51 @@ const CASES: Case[] = [
   { name: "yy p: linewise text (cursor placement is a documented divergence)", buffer: ["a", "b"], cursor: [0, 0], keys: "yyp",
     ignoreCursor: "nvim lands on the pasted line's first non-blank; ours sits at col 0",
     ours: (s) => { setYank(s.lines[0] ?? "", "line"); pasteAfter(s); } },
+  { name: "^: first non-blank char", buffer: ["  hello"], cursor: [0, 0], keys: "^",
+    ours: (s) => { s.cursorCol = firstNonBlank(s); } },
+  { name: "d^: delete to first non-blank", buffer: ["  hello"], cursor: [0, 4], keys: "d^",
+    ours: (s) => opMotion(s, "delete", "^") },
+  { name: "e: crosses the line break", buffer: ["foo", "  bar baz"], cursor: [0, 2], keys: "e",
+    ours: (s) => { const t = findWordEndForward(s.lines, s.cursorLine, s.cursorCol); if (t) { s.cursorLine = t.line; s.cursorCol = t.col; } } },
+  { name: "de: crosses the line break", buffer: ["foo", "  bar"], cursor: [0, 2], keys: "de",
+    ours: (s) => opMotion(s, "delete", "e") },
+  { name: "X: delete char before cursor", buffer: ["hello"], cursor: [0, 3], keys: "X",
+    ours: (s) => {
+      const line = s.lines[0];
+      if (s.cursorCol > 0) {
+        const del = graphemeBefore(line, s.cursorCol);
+        if (del) { s.lines[0] = line.slice(0, s.cursorCol - del.length) + line.slice(s.cursorCol); s.cursorCol -= del.length; }
+      }
+    } },
+  { name: "X at BOL: no-op", buffer: ["hello"], cursor: [0, 0], keys: "X",
+    ours: () => {} },
+  { name: "r: replace char under cursor", buffer: ["hellp"], cursor: [0, 4], keys: "ro",
+    ours: (s) => { s.lines[0] = (s.lines[0] ?? "").slice(0, 4) + "o"; } },
+  { name: "J: join with single space", buffer: ["foo", "  bar"], cursor: [0, 0], keys: "J",
+    ours: (s) => joinLines(s) },
+  { name: "J: no space before )", buffer: ["foo(", ")"], cursor: [0, 0], keys: "J",
+    ours: (s) => joinLines(s) },
+  { name: "J on blank next line: removes the break", buffer: ["foo", "   "], cursor: [0, 0], keys: "J",
+    ours: (s) => joinLines(s) },
+  { name: "J on last line: no-op", buffer: ["foo"], cursor: [0, 0], keys: "J",
+    ours: () => {} },
+  { name: "P: charwise paste before cursor", buffer: ["hello world"], cursor: [0, 1], keys: "yeP",
+    ours: (s) => {
+      opMotion(s, "yank", "e");
+      const yanked = "hello world".slice(1, 5); // "ello" - mirrors register after ye
+      s.cursorCol = 1;
+      setYank(yanked, "char");
+      pasteBefore(s);
+    } },
+  { name: "S: clears the line in place", buffer: ["foo", "bar"], cursor: [0, 1], keys: "S",
+    ours: (s) => { setYank(s.lines[0] ?? "", "line"); s.lines[0] = ""; cursorAt(s, 0, 0); } },
 ];
+
+function firstNonBlank(s: EdState): number {
+  const line = s.lines[s.cursorLine] ?? "";
+  const m = line.search(/\S/);
+  return m >= 0 ? m : 0;
+}
 
 function opFindCursor(s: EdState, ch: string, kind: "f" | "t"): void {
   const target = findCharOnLine(s.lines[s.cursorLine] ?? "", s.cursorCol, ch, kind);

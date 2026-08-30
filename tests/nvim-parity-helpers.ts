@@ -15,7 +15,7 @@ import { join } from "node:path";
 import {
   type EdState, textObjectRange, deleteRange, deleteLines, pasteAfter, setYank, motionRange,
 } from "../src/ops.ts";
-import { findWordEnd, findCharOnLine } from "../src/motions.ts";
+import { findWordEnd, findWordEndForward, findCharOnLine, firstNonBlankCol } from "../src/motions.ts";
 
 export type Op = "delete" | "yank";
 
@@ -33,9 +33,10 @@ export function opMotion(s: EdState, op: Op, motion: string): void {
   const range = motionRange(motion, 1, s.cursorLine, s.cursorCol, {
     applyMotion: (m) => {
       if (m === "e") {
-        const t = findWordEnd(s.lines[s.cursorLine] ?? "", s.cursorCol + 1);
-        if (t >= 0) s.cursorCol = t;
+        const t = findWordEndForward(s.lines, s.cursorLine, s.cursorCol);
+        if (t) { s.cursorLine = t.line; s.cursorCol = t.col; }
       } else if (m === "0") s.cursorCol = 0;
+      else if (m === "^") s.cursorCol = firstNonBlankCol(s.lines[s.cursorLine] ?? "");
       else if (m === "$") s.cursorCol = (s.lines[s.cursorLine] ?? "").length;
       else throw new Error(`delegated motion reached the parity harness: ${m}`);
     },

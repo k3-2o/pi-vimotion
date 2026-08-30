@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { textObjectRange, deleteRange, deleteLines, pasteAfter, setYank, textBetween, motionRange, graphemeAt } from "../src/ops.ts";
+import { textObjectRange, deleteRange, deleteLines, pasteAfter, pasteBefore, setYank, textBetween, motionRange, graphemeAt, graphemeBefore, joinLines } from "../src/ops.ts";
 import type { EdState } from "../src/ops.ts";
 
 function at(lines: string[], col: number): EdState {
@@ -164,4 +164,47 @@ test("graphemeAt: astral chars yield the full grapheme (x/s yank contract)", () 
   assert.equal(graphemeAt(line, 3), "y");
   assert.equal(graphemeAt(line, 99), "");          // past end -> "" (no yank)
   assert.equal(graphemeAt("ab", 1), "b");
+});
+
+test("pasteBefore: charwise at cursor, cursor on last pasted char", () => {
+  const { s } = undoable(["hello"], 2);
+  setYank("XY", "char");
+  pasteBefore(s);
+  assert.deepEqual(s.lines, ["heXYllo"]);
+  assert.equal(s.cursorCol, 3);
+});
+
+test("pasteBefore: linewise inserts above, cursor at col 0", () => {
+  const { s } = undoable(["a", "b"], 0);
+  setYank("z", "line");
+  pasteBefore(s);
+  assert.deepEqual(s.lines, ["z", "a", "b"]);
+  assert.deepEqual({ line: s.cursorLine, col: s.cursorCol }, { line: 0, col: 0 });
+});
+
+test("joinLines: single space, cursor on join point", () => {
+  const { s } = undoable(["foo", "  bar"], 0);
+  joinLines(s);
+  assert.deepEqual(s.lines, ["foo bar"]);
+  assert.equal(s.cursorCol, 3); // the join space
+});
+
+test("joinLines: no space before ) and on blank/last-line edges", () => {
+  const s1: EdState = { lines: ["foo(", ")"], cursorLine: 0, cursorCol: 0 };
+  joinLines(s1);
+  assert.deepEqual(s1.lines, ["foo()"]);
+  const s2: EdState = { lines: ["foo", "   "], cursorLine: 0, cursorCol: 0 };
+  joinLines(s2);
+  assert.deepEqual(s2.lines, ["foo"]);
+  const s3: EdState = { lines: ["only"], cursorLine: 0, cursorCol: 0 };
+  joinLines(s3); // no next line: no-op
+  assert.deepEqual(s3.lines, ["only"]);
+});
+
+test("graphemeBefore: previous grapheme, edges", () => {
+  const line = "x\u{1F44D}y";
+  assert.equal(graphemeBefore(line, 3), "\u{1F44D}"); // grapheme ending at col 3
+  assert.equal(graphemeBefore(line, 1), "x");
+  assert.equal(graphemeBefore(line, 0), "");
+  assert.equal(graphemeBefore(line, 99), "");
 });

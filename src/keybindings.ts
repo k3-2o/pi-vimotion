@@ -10,6 +10,7 @@ function buildKeybindingsMarkdown(): string {
 | \`h\` \`j\` \`k\` \`l\` | Left / Down / Up / Right |
 | \`w\` \`b\` \`e\` | Next word start / prev word start / word end |
 | \`0\` \`$\` | Line start / line end |
+| \`^\` | First non-blank char |
 | \`f\` \`F\` | Find next / prev char (e.g. \`f(\`) |
 | \`t\` \`T\` | Till before next / after prev char |
 | \`;\` \`,\` | Repeat last find / repeat reversed |
@@ -40,11 +41,16 @@ _Yanks (\`y\`, \`Y\`, \`yy\`) also copy to the system clipboard._
 | Key | Action |
 |-----|--------|
 | \`x\` | Delete char under cursor |
+| \`X\` | Delete char before cursor |
 | \`s\` | Delete char, enter insert |
+| \`r{char}\` | Replace char under cursor |
 | \`D\` | Delete to end of line |
 | \`C\` | Change to end of line |
+| \`S\` | Change whole line |
 | \`Y\` | Yank line |
 | \`p\` | Paste after cursor |
+| \`P\` | Paste before cursor |
+| \`J\` | Join next line |
 | \`u\` | Undo |
 
 **Insert mode**

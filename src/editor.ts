@@ -1,14 +1,14 @@
 import { CustomEditor, copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope, FindKind, LastFind } from "./types.ts";
-import { firstNonBlankCol, findWordEnd, findCharOnLine, reverseFind } from "./motions.ts";
+import { firstNonBlankCol, findWordEndForward, findCharOnLine, reverseFind } from "./motions.ts";
 import {
-  type EdState, textBetween, graphemeAt,
-  setYank, motionRange, deleteRange, deleteLines, pasteAfter, textObjectRange,
+  type EdState, textBetween, graphemeAt, graphemeBefore,
+  setYank, setCursorPos, motionRange, deleteRange, deleteLines, pasteAfter, pasteBefore, joinLines, textObjectRange,
 } from "./ops.ts";
 
 // Motions that operators can target (also used standalone in normal mode)
-const MOTIONS = ["h", "j", "k", "l", "w", "b", "e", "0", "$"] as const;
+const MOTIONS = ["h", "j", "k", "l", "w", "b", "e", "0", "$", "^"] as const;
 type Motion = (typeof MOTIONS)[number];
 
 function isMotion(key: string): key is Motion {
@@ -44,6 +44,7 @@ interface EditorInternals {
   moveWordForwards(): void;
   moveWordBackwards(): void;
   handleForwardDelete(): void;
+  handleBackspace(): void;
   deleteToEndOfLine(): void;
   undo(): void;
 }
@@ -106,6 +107,10 @@ export class PiVimEditor extends CustomEditor {
   }
 
   private handleNormal(data: string): void {
+    if (this.pending.type === "replace") {
+      this.handleReplacePending(data);
+      return;
+    }
     if (this.pending.type === "operator") {
       this.handleOperatorPending(this.pending.operator, data);
       return;
@@ -190,6 +195,29 @@ export class PiVimEditor extends CustomEditor {
         this.recordYank(s.lines[s.cursorLine] ?? "", "line", "yank");
         return;
       }
+      case "X": {
+        const line = s.lines[s.cursorLine] ?? "";
+        if (s.cursorCol > 0 && s.cursorCol <= line.length) {
+          const del = graphemeBefore(line, s.cursorCol);
+          if (del) {
+            this.host.handleBackspace(); // grapheme-accurate, moves cursor back
+            setYank(del, "char");
+          }
+        }
+        return;
+      }
+      case "P": {
+        pasteBefore(this.edState);
+        return;
+      }
+      case "J": {
+        joinLines(this.edState);
+        return;
+      }
+      case "S": {
+        this.applyOperatorToLine("change"); // substitute line = cc
+        return;
+      }
       case "p": {
         pasteAfter(this.edState);
         return;
@@ -200,6 +228,10 @@ export class PiVimEditor extends CustomEditor {
       this.pending = { type: "operator", operator: operatorOf(data) };
       return;
     }
+    if (data === "r") {
+      this.pending = { type: "replace" };
+      return;
+    }
 
     if (data === "K") { this.onKeybindingsRequest?.(); return; }
     if (data === "u") { this.host.undo(); return; }
@@ -207,6 +239,20 @@ export class PiVimEditor extends CustomEditor {
     // Unrecognized printable: ignore; control keys fall through
     if (data.length === 1 && data.charCodeAt(0) >= 32) return;
     super.handleInput(data);
+  }
+
+  /** r{char}: swap the grapheme under the cursor for the pressed key.
+   *  Esc and control keys cancel (Esc is handled in handleInput). */
+  private handleReplacePending(data: string): void {
+    this.pending = { type: "none" };
+    if (data.length === 0 || data.charCodeAt(0) < 32) return;
+    const s = this.st;
+    const line = s.lines[s.cursorLine] ?? "";
+    if (s.cursorCol >= line.length) return;
+    this.host.pushUndoSnapshot();
+    const grapheme = graphemeAt(line, s.cursorCol);
+    s.lines[s.cursorLine] = line.slice(0, s.cursorCol) + data + line.slice(s.cursorCol + grapheme.length);
+    this.host.onChange?.(s.lines.join("\n"));
   }
 
   private handleOperatorPending(op: VimOperator, data: string): void {
@@ -351,9 +397,20 @@ export class PiVimEditor extends CustomEditor {
       this.recordYank(this.st.lines[this.st.cursorLine] ?? "", "line", op);
       return;
     }
+    if (op === "change") {
+      // cc/S clears the line in place (nvim keeps one empty line) — unlike dd,
+      // which removes it. Esc right after must not have deleted the line.
+      const text = this.st.lines[this.st.cursorLine] ?? "";
+      this.host.pushUndoSnapshot();
+      setYank(text, "line");
+      this.st.lines[this.st.cursorLine] = "";
+      setCursorPos(this.st, this.st.cursorLine, 0);
+      this.host.onChange?.(this.st.lines.join("\n"));
+      this.mode = "insert";
+      return;
+    }
     const text = deleteLines(this.edState, 1);
     setYank(text, "line");
-    if (op === "change") this.mode = "insert";
   }
 
   private applyOperatorToMotion(op: VimOperator, motion: string) {
@@ -402,12 +459,16 @@ export class PiVimEditor extends CustomEditor {
       case "w": this.host.moveWordForwards(); break;
       case "b": this.host.moveWordBackwards(); break;
       case "e": {
-        const line = s.lines[s.cursorLine] ?? "";
-        const target = findWordEnd(line, s.cursorCol + 1);
-        if (target >= 0) s.cursorCol = target; // -1 = no word end ahead: stay put
+        // vim `e` crosses line breaks when the current line has no word end ahead
+        const target = findWordEndForward(s.lines, s.cursorLine, s.cursorCol);
+        if (target) {
+          s.cursorLine = target.line;
+          s.cursorCol = target.col;
+        }
         break;
       }
       case "0": s.cursorCol = 0; break;
+      case "^": s.cursorCol = firstNonBlankCol(s.lines[s.cursorLine] ?? ""); break;
       case "$": this.host.moveToLineEnd(); break;
     }
   }

@@ -13,7 +13,7 @@ function getCursor(s: EdState) {
   return { line: s.cursorLine, col: s.cursorCol };
 }
 
-function setCursorPos(s: EdState, line: number, col: number) {
+export function setCursorPos(s: EdState, line: number, col: number) {
   s.cursorLine = Math.max(0, Math.min(line, s.lines.length - 1));
   const maxCol = s.lines[s.cursorLine]?.length ?? 0;
   s.cursorCol = Math.max(0, Math.min(col, maxCol));
@@ -131,6 +131,15 @@ export function deleteLines(s: EdState, count: number): string {
 
 /** Paste yanked text after cursor. Linewise → new line below; charwise → after col. */
 export function pasteAfter(s: EdState) {
+  pasteImpl(s, true);
+}
+
+/** Paste yanked text at/before cursor. Linewise → new line above; charwise → at col. */
+export function pasteBefore(s: EdState) {
+  pasteImpl(s, false);
+}
+
+function pasteImpl(s: EdState, after: boolean) {
   const buf = getYank();
   if (!buf) return;
   if (buf.type === "char" && buf.text === "") return;
@@ -139,11 +148,12 @@ export function pasteAfter(s: EdState) {
 
   if (buf.type === "line") {
     const insertLines = buf.text.split("\n");
-    s.lines = [...s.lines.slice(0, cursor.line + 1), ...insertLines, ...s.lines.slice(cursor.line + 1)];
-    setCursorPos(s, cursor.line + 1, 0);
+    const at = after ? cursor.line + 1 : cursor.line;
+    s.lines = [...s.lines.slice(0, at), ...insertLines, ...s.lines.slice(at)];
+    setCursorPos(s, at, 0);
   } else {
     const line = s.lines[cursor.line] ?? "";
-    const insertAt = Math.min(cursor.col + 1, line.length);
+    const insertAt = Math.min(cursor.col + (after ? 1 : 0), line.length);
     const parts = buf.text.split("\n");
     if (parts.length === 1) {
       s.lines[cursor.line] = line.slice(0, insertAt) + buf.text + line.slice(insertAt);
@@ -159,6 +169,21 @@ export function pasteAfter(s: EdState) {
       setCursorPos(s, cursor.line + last, Math.max(0, parts[last].length - 1));
     }
   }
+  notifyChanged(s);
+}
+
+/** Join the next line into the current one (vim `J`): one separating space,
+ *  stripping trailing/leading whitespace, except no space before `)`.
+ *  Cursor lands on the join point. No register effect. */
+export function joinLines(s: EdState): void {
+  if (s.cursorLine >= s.lines.length - 1) return; // no next line
+  s.pushUndoSnapshot?.();
+  const cur = (s.lines[s.cursorLine] ?? "").replace(/\s+$/, "");
+  const next = (s.lines[s.cursorLine + 1] ?? "").replace(/^\s+/, "");
+  const sep = cur === "" || next === "" || next.startsWith(")") ? "" : " ";
+  s.lines[s.cursorLine] = cur + sep + next;
+  s.lines = [...s.lines.slice(0, s.cursorLine + 1), ...s.lines.slice(s.cursorLine + 2)];
+  setCursorPos(s, s.cursorLine, cur.length);
   notifyChanged(s);
 }
 
@@ -328,6 +353,18 @@ export function graphemeAt(line: string, col: number): string {
     if (segment.index > col) return ""; // col landed mid-grapheme: nothing starts there
   }
   return "";
+}
+
+/** The grapheme immediately before col (the one handleBackspace removes).
+ *  Returns "" when col is 0 or past the end. */
+export function graphemeBefore(line: string, col: number): string {
+  if (col <= 0 || col > line.length) return "";
+  let last = "";
+  for (const segment of new Intl.Segmenter().segment(line)) {
+    if (segment.index >= col) break;
+    last = segment.segment;
+  }
+  return last;
 }
 
 /** Extract the text between two positions, joining lines with newlines. */

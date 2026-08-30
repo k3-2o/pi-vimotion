@@ -11,6 +11,7 @@ export type FindKind = "f" | "t" | "F" | "T";
 
 export type VimPending =
   | { type: "none" }
+  | { type: "replace" }
   | { type: "operator"; operator: VimOperator }
   | { type: "textobject"; operator: VimOperator; scope: TextObjectScope }
   | { type: "find"; find: FindKind; operator?: VimOperator }

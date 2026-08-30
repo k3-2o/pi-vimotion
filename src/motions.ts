@@ -20,6 +20,21 @@ export function findWordEnd(line: string, fromCol: number): number {
   return col - 1;
 }
 
+/** Vim `e` across the whole buffer: the next word end at or after
+ *  (line, col), chaining into following lines. Returns absolute
+ *  [line, col] of the word-end character, or null when there is none. */
+export function findWordEndForward(
+  lines: string[], line: number, col: number,
+): { line: number; col: number } | null {
+  const local = findWordEnd(lines[line] ?? "", col + 1);
+  if (local >= 0) return { line, col: local };
+  for (let l = line + 1; l < lines.length; l++) {
+    const end = findWordEnd(lines[l] ?? "", 0);
+    if (end >= 0) return { line: l, col: end };
+  }
+  return null;
+}
+
 /** Returns 0 if the line is all whitespace. */
 export function firstNonBlankCol(line: string): number {
   const col = line.search(/\S/);
