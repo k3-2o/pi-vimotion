@@ -1,8 +1,3 @@
-/**
- * Keybinding reference for pi-vim.
- * Renders as a Markdown component wrapped in a dismissable overlay.
- */
-
 import { Markdown, matchesKey, type Component } from "@earendil-works/pi-tui";
 
 export function buildKeybindingsMarkdown(): string {
@@ -26,6 +21,8 @@ export function buildKeybindingsMarkdown(): string {
 | \`y\` + motion | Yank (e.g. \`yw\`, \`y$\`) |
 | \`c\` + motion | Change — delete + insert (e.g. \`cw\`) |
 | \`dd\` \`yy\` \`cc\` | Delete / yank / change whole line |
+
+_Yanks (\`y\`, \`Y\`, \`yy\`) also copy to the system clipboard._
 
 **Text objects** (after \`d\`/\`y\`/\`c\`, type \`i\` or \`a\` then a char)
 | Key | Action |
@@ -67,9 +64,6 @@ _Find/till also work as operator targets: \`df,\` deletes to next comma, \`ct(\`
 _Buffer jumps too: \`dG\` deletes to end of buffer, \`ygg\` yanks back to the top._`;
 }
 
-/**
- * Create a component that renders the keybinding markdown and handles keyboard.
- */
 export function createKeybindingsComponent(
   mdTheme: any,
   done: (value: null) => void,
@@ -89,7 +83,6 @@ export function createKeybindingsComponent(
         done(null);
         return;
       }
-      // Any other key dismisses
       done(null);
     },
   };

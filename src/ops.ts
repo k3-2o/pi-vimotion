@@ -1,17 +1,6 @@
-/**
- * Text operations — work on a mutable editor state bag.
- * No dependency on PiVimEditor class.
- *
- * Supports: operator+motion ranges, line delete/yank, char/line paste,
- * and text object range computation (word, WORD, paired, quoted).
- */
-
 import { isWordChar, isNonWhitespace } from "./motions.ts";
 import type { YankedText, VimTextObject, TextObjectScope } from "./types.ts";
 
-// ====================================================================
-// Editor state shape
-// ====================================================================
 export interface EdState {
   lines: string[];
   cursorLine: number;
@@ -31,13 +20,10 @@ export function setCursorPos(s: EdState, line: number, col: number) {
 }
 
 function notifyChanged(s: EdState) {
-  s.pushUndoSnapshot?.();
   s.onChange?.(s.lines.join("\n"));
 }
 
-// ====================================================================
 // Yank buffer (module-level, cleared on session shutdown)
-// ====================================================================
 let yankBuffer: YankedText | null = null;
 
 export function getYank(): YankedText | null {
@@ -53,9 +39,6 @@ export function resetState() {
   yankBuffer = null;
 }
 
-// ====================================================================
-// Motion range computation (for operator + motion)
-// ====================================================================
 export interface TextRange {
   startLine: number; startCol: number;
   endLine: number; endCol: number;
@@ -86,49 +69,41 @@ export function motionRange(
   ed.st.cursorLine = savedLine;
   ed.st.cursorCol = savedCol;
 
-  const lines = ed.st.lines;
-  if (startLine === endLine) {
-    const [start, end] = startCol <= endCol ? [startCol, endCol] : [endCol, startCol];
-    return { startLine, startCol: start, endLine, endCol: end, text: lines[startLine].slice(start, end) };
-  }
-
-  const parts: string[] = [];
-  if (startLine < endLine) {
-    parts.push(lines[startLine].slice(startCol));
-    for (let i = startLine + 1; i < endLine; i++) parts.push(lines[i]);
-    parts.push(lines[endLine].slice(0, endCol));
-    return { startLine, startCol, endLine, endCol, text: parts.join("\n") };
-  }
-  parts.push(lines[endLine].slice(endCol));
-  for (let i = endLine + 1; i < startLine; i++) parts.push(lines[i]);
-  parts.push(lines[startLine].slice(0, startCol));
-  return { startLine: endLine, startCol: endCol, endLine: startLine, endCol: startCol, text: parts.join("\n") };
+  // Normalize direction so start <= end, then capture the covered text.
+  const forward = startLine < endLine || (startLine === endLine && startCol <= endCol);
+  const [aLine, aCol, bLine, bCol] = forward
+    ? [startLine, startCol, endLine, endCol]
+    : [endLine, endCol, startLine, startCol];
+  return {
+    startLine: aLine, startCol: aCol, endLine: bLine, endCol: bCol,
+    text: textBetween(ed.st.lines, aLine, aCol, bLine, bCol),
+  };
 }
-
-// ====================================================================
-// Delete operations
-// ====================================================================
 
 /** Delete a text range. Normalizes order so start <= end. Returns deleted text. */
 export function deleteRange(s: EdState, sl: number, sc: number, el: number, ec: number): string {
+  // Normalize so start <= end (up front, so the undo snapshot is taken once).
+  if (sl > el || (sl === el && sc > ec)) {
+    [sl, sc, el, ec] = [el, ec, sl, sc];
+  }
+  if (sl === el && sc === ec) return ""; // empty range — nothing to do, no undo entry
+
+  s.pushUndoSnapshot?.(); // snapshot pre-change state so `u` restores it
   const lines = [...s.lines];
   let deletedText: string;
 
   if (sl === el) {
-    const [a, b] = sc <= ec ? [sc, ec] : [ec, sc];
-    deletedText = lines[sl].slice(a, b);
-    lines[sl] = lines[sl].slice(0, a) + lines[sl].slice(b);
+    deletedText = lines[sl].slice(sc, ec);
+    lines[sl] = lines[sl].slice(0, sc) + lines[sl].slice(ec);
     s.lines = lines;
-    setCursorPos(s, sl, a);
-  } else if (sl < el) {
+    setCursorPos(s, sl, sc);
+  } else {
     deletedText = lines[sl].slice(sc) + "\n";
     for (let i = sl + 1; i < el; i++) deletedText += lines[i] + "\n";
     deletedText += lines[el].slice(0, ec);
     lines[sl] = lines[sl].slice(0, sc) + lines[el].slice(ec);
     s.lines = [...lines.slice(0, sl + 1), ...lines.slice(el + 1)];
     setCursorPos(s, sl, sc);
-  } else {
-    return deleteRange(s, el, ec, sl, sc);
   }
 
   notifyChanged(s);
@@ -139,6 +114,8 @@ export function deleteRange(s: EdState, sl: number, sc: number, el: number, ec: 
 export function deleteLines(s: EdState, count: number): string {
   const start = s.cursorLine;
   const end = Math.min(start + count, s.lines.length);
+  if (end <= start) return "";
+  s.pushUndoSnapshot?.(); // snapshot pre-change state so `u` restores it
   const deleted = s.lines.slice(start, end).join("\n");
   const newLines = [...s.lines.slice(0, start), ...s.lines.slice(end)];
   s.lines = newLines.length === 0 ? [""] : newLines;
@@ -147,15 +124,13 @@ export function deleteLines(s: EdState, count: number): string {
   return deleted;
 }
 
-// ====================================================================
-// Paste
-// ====================================================================
-
 /** Paste yanked text after cursor. Linewise → new line below; charwise → after col. */
 export function pasteAfter(s: EdState) {
   const buf = getYank();
   if (!buf) return;
+  if (buf.type === "char" && buf.text === "") return;
   const cursor = getCursor(s);
+  s.pushUndoSnapshot?.(); // snapshot pre-change state so `u` restores it
 
   if (buf.type === "line") {
     const insertLines = buf.text.split("\n");
@@ -164,15 +139,23 @@ export function pasteAfter(s: EdState) {
   } else {
     const line = s.lines[cursor.line] ?? "";
     const insertAt = Math.min(cursor.col + 1, line.length);
-    s.lines[cursor.line] = line.slice(0, insertAt) + buf.text + line.slice(insertAt);
-    setCursorPos(s, cursor.line, insertAt + buf.text.length - 1);
+    const parts = buf.text.split("\n");
+    if (parts.length === 1) {
+      s.lines[cursor.line] = line.slice(0, insertAt) + buf.text + line.slice(insertAt);
+      setCursorPos(s, cursor.line, insertAt + buf.text.length - 1);
+    } else {
+      // Multi-line charwise yank (e.g. from di( on a multi-line block):
+      // first part joins the line head, last part joins the tail.
+      const head = line.slice(0, insertAt);
+      const tail = line.slice(insertAt);
+      const last = parts.length - 1;
+      const inserted = [head + parts[0], ...parts.slice(1, last), parts[last] + tail];
+      s.lines = [...s.lines.slice(0, cursor.line), ...inserted, ...s.lines.slice(cursor.line + 1)];
+      setCursorPos(s, cursor.line + last, Math.max(0, parts[last].length - 1));
+    }
   }
   notifyChanged(s);
 }
-
-// ====================================================================
-// Text object ranges
-// ====================================================================
 
 export interface ObjRange {
   startLine: number; startCol: number;
@@ -204,13 +187,11 @@ export function textObjectRange(
   }
 }
 
-/** iw/aw or iW/aW — word or WORD on the current line. */
 function wordObjectRange(s: EdState, scope: TextObjectScope, bigWord: boolean): ObjRange | null {
   const line = s.lines[s.cursorLine] ?? "";
   const col = s.cursorCol;
   const isBound = bigWord ? isNonWhitespace : isWordChar;
 
-  // If cursor is on a non-boundary char, find the run containing it
   if (col < line.length && isBound(line[col])) {
     let start = col;
     while (start > 0 && isBound(line[start - 1])) start--;
@@ -287,7 +268,6 @@ function pairedObjectRange(
   return { startLine: start.line, startCol: start.col, endLine: end.line, endCol: end.col };
 }
 
-/** i" / a" — quoted string on the current line. */
 function quotedObjectRange(
   s: EdState,
   scope: TextObjectScope,
@@ -315,8 +295,6 @@ function quotedObjectRange(
   return { startLine: s.cursorLine, startCol: a, endLine: s.cursorLine, endCol: b };
 }
 
-// ---- flat-string offset helpers (for paired delimiters spanning lines) ----
-
 function flatOffset(lines: string[], line: number, col: number): number {
   let offset = 0;
   for (let i = 0; i < line; i++) offset += lines[i].length + 1; // +1 for \n
@@ -331,4 +309,13 @@ function flatToLineCol(lines: string[], offset: number): { line: number; col: nu
     pos += len + 1;
   }
   return { line: lines.length - 1, col: lines[lines.length - 1]?.length ?? 0 };
+}
+
+/** Extract the text between two positions, joining lines with newlines. */
+export function textBetween(lines: string[], sl: number, sc: number, el: number, ec: number): string {
+  if (sl === el) return (lines[sl] ?? "").slice(sc, ec);
+  const parts = [(lines[sl] ?? "").slice(sc)];
+  for (let i = sl + 1; i < el; i++) parts.push(lines[i] ?? "");
+  parts.push((lines[el] ?? "").slice(0, ec));
+  return parts.join("\n");
 }

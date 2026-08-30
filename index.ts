@@ -1,11 +1,3 @@
-/**
- * pi-vim — Modal vim editing for pi's prompt box.
- *
- * Vim mode is OFF by default. Use /vim to toggle it on/off.
- * The preference persists across sessions and reloads via ~/.pi/vim-enabled.
- * Two modes only: Normal and Insert.
- */
-
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
@@ -17,7 +9,6 @@ import { createKeybindingsComponent } from "./src/keybindings.ts";
 
 const VIM_PREF_FILE = join(getAgentDir(), "vim-enabled");
 
-/** Read the persisted vim preference. Presence of file = enabled. */
 function readVimPref(): boolean {
   try {
     return existsSync(VIM_PREF_FILE);
@@ -26,7 +17,6 @@ function readVimPref(): boolean {
   }
 }
 
-/** Persist (or clear) the vim preference. */
 function writeVimPref(enabled: boolean) {
   try {
     if (enabled) writeFileSync(VIM_PREF_FILE, "");
@@ -55,6 +45,7 @@ export default function (pi: ExtensionAPI) {
 
     ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
       const editor = new PiVimEditor(tui, editorTheme, keybindings);
+      // Wrap handleInput so the footer status tracks mode transitions.
       const origHandle = editor.handleInput.bind(editor);
       editor.handleInput = (data: string) => {
         const prevMode = editor.mode;
@@ -77,8 +68,8 @@ export default function (pi: ExtensionAPI) {
       return editor;
     });
 
-    updateStatus(ctx, theme, "insert");
-    ctx.ui.notify("Vim mode on — Esc for Normal mode", "info");
+    updateStatus(ctx, theme, "normal");
+    ctx.ui.notify("Vim mode on — Normal mode (i to type, K for keybindings)", "info");
   };
 
   const deactivateVim = (ctx: ExtensionContext) => {
@@ -87,34 +78,21 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify("Vim mode off", "info");
   };
 
+  const toggleVim = (ctx: ExtensionContext) => {
+    vimActive = !vimActive;
+    writeVimPref(vimActive);
+    if (vimActive) activateVim(ctx);
+    else deactivateVim(ctx);
+  };
+
   pi.registerCommand("vim", {
     description: "Toggle vim mode on/off",
-    handler: async (_args, ctx) => {
-      if (vimActive) {
-        vimActive = false;
-        writeVimPref(false);
-        deactivateVim(ctx);
-      } else {
-        vimActive = true;
-        writeVimPref(true);
-        activateVim(ctx);
-      }
-    },
+    handler: async (_args, ctx) => { toggleVim(ctx); },
   });
 
   pi.registerShortcut("ctrl+;", {
     description: "Toggle vim mode",
-    handler: async (ctx) => {
-      if (vimActive) {
-        vimActive = false;
-        writeVimPref(false);
-        deactivateVim(ctx);
-      } else {
-        vimActive = true;
-        writeVimPref(true);
-        activateVim(ctx);
-      }
-    },
+    handler: async (ctx) => { toggleVim(ctx); },
   });
 
   // Re-activate vim on session start if the preference says it should be on.

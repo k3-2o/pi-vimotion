@@ -1,17 +1,9 @@
-/**
- * PiVimEditor — modal vim editing for pi's prompt box.
- *
- * Modelled on Codex's composer vim mode: Normal + Insert only.
- * No visual mode, no counts, no dot-repeat. Operators (d/y/c) compose
- * with motions and text objects (di(, ciw, da").
- */
-
-import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope, FindKind } from "./types.ts";
-import { firstNonBlankCol, findWordEnd } from "./motions.ts";
+import { firstNonBlankCol, findWordEnd, findCharOnLine, reverseFind } from "./motions.ts";
 import {
-  type EdState,
+  type EdState, textBetween,
   setYank, motionRange, deleteRange, deleteLines, pasteAfter, textObjectRange,
 } from "./ops.ts";
 
@@ -23,7 +15,6 @@ function isMotion(key: string): key is Motion {
   return (MOTIONS as readonly string[]).includes(key);
 }
 
-// Text object trigger keys → object type
 const TEXT_OBJECTS: Record<string, VimTextObject> = {
   w: "word",
   W: "bigWord",
@@ -35,22 +26,16 @@ const TEXT_OBJECTS: Record<string, VimTextObject> = {
   "`": "backtick",
 };
 
-// Find/till char trigger keys
 const FIND_KEYS = new Set(["f", "t", "F", "T"]);
 
-// ====================================================================
-// PiVimEditor
-// ====================================================================
 export class PiVimEditor extends CustomEditor {
-  mode: VimMode = "insert"; // entry mode — seamless until first Esc
+  mode: VimMode = "normal"; // enter in Normal; i/a/o… to start typing
   pending: VimPending = { type: "none" };
-  /** Last find motion, for ; and , to repeat/reverse. */
   lastFind: { find: FindKind; char: string } | null = null;
 
-  /** Callback to show keybinding reference (triggered by K in normal mode) */
   onKeybindingsRequest?: () => void;
 
-  // ---- Base editor internals access ----
+  /** The base editor's private state bag (pi doesn't expose it typed). */
   private get st() {
     return (this as any).state as { lines: string[]; cursorLine: number; cursorCol: number };
   }
@@ -59,6 +44,7 @@ export class PiVimEditor extends CustomEditor {
     (this as any)[name](...args);
   }
 
+/** EdState view over the base editor's state — ops.ts mutations land live in pi. */
   get edState(): EdState {
     const s = this.st;
     return {
@@ -73,7 +59,6 @@ export class PiVimEditor extends CustomEditor {
     };
   }
 
-  // ---- Main input handler ----
   // Esc priority: cancel pending op → leave Insert → pass through to pi (abort).
   // The last one is why double-tap Esc aborts streaming from Insert mode.
   handleInput(data: string): void {
@@ -86,7 +71,6 @@ export class PiVimEditor extends CustomEditor {
         this.mode = "normal";
         return;
       }
-      // Normal + no pending: let pi handle it (aborts streaming).
       super.handleInput(data);
       return;
     }
@@ -94,11 +78,7 @@ export class PiVimEditor extends CustomEditor {
     this.handleNormal(data);
   }
 
-  // ====================================================================
-  // Normal mode
-  // ====================================================================
   private handleNormal(data: string): void {
-    // Resolve any pending operator / text-object / find state first
     if (this.pending.type === "operator") {
       this.handleOperatorPending(this.pending.operator, data);
       return;
@@ -116,7 +96,6 @@ export class PiVimEditor extends CustomEditor {
       return;
     }
 
-    // ---- Insert transitions ----
     switch (data) {
       case "i": this.mode = "insert"; return;
       case "a": this.em("moveCursor", 0, 1); this.mode = "insert"; return;
@@ -131,21 +110,17 @@ export class PiVimEditor extends CustomEditor {
         return;
     }
 
-    // ---- Motions ----
     if (isMotion(data)) { this.applyMotion(data); return; }
 
-    // ---- Find / till char (standalone) ----
     if (FIND_KEYS.has(data)) {
       this.pending = { type: "find", find: data as FindKind };
       return;
     }
     if (data === ";" || data === ",") { this.repeatFind(data === ","); return; }
 
-    // ---- Buffer jumps ----
     if (data === "G") { this.jumpLine(this.st.lines.length - 1, undefined); return; }
     if (data === "g") { this.pending = { type: "gpending" }; return; }
 
-    // ---- Single-stroke edits ----
     const s = this.st;
     switch (data) {
       case "x": {
@@ -182,7 +157,7 @@ export class PiVimEditor extends CustomEditor {
         return;
       }
       case "Y": {
-        setYank(s.lines[s.cursorLine] ?? "", "line");
+        this.recordYank(s.lines[s.cursorLine] ?? "", "line", "yank");
         return;
       }
       case "p": {
@@ -191,13 +166,11 @@ export class PiVimEditor extends CustomEditor {
       }
     }
 
-    // ---- Start operators ----
     if (data === "d" || data === "y" || data === "c") {
       this.pending = { type: "operator", operator: operatorOf(data) };
       return;
     }
 
-    // ---- Misc ----
     if (data === "K") { this.onKeybindingsRequest?.(); return; }
     if (data === "u") { this.em("undo"); return; }
 
@@ -206,9 +179,6 @@ export class PiVimEditor extends CustomEditor {
     super.handleInput(data);
   }
 
-  // ====================================================================
-  // Operator-pending (after d/y/c, before motion or text object)
-  // ====================================================================
   private handleOperatorPending(op: VimOperator, data: string): void {
     // Repeat operator = whole line (dd, yy, cc)
     if (data === operatorKey(op)) {
@@ -216,19 +186,18 @@ export class PiVimEditor extends CustomEditor {
       this.applyOperatorToLine(op);
       return;
     }
-    // Esc / cancel — anything that isn't a motion, i/a prefix, find, or g/G cancels
+    // Cancel on anything that isn't a motion, i/a prefix, find/till, ;/, repeat, or g/G
+    // (Esc never reaches here — handleInput clears pending state first)
     if (!isMotion(data) && data !== "i" && data !== "a" && !FIND_KEYS.has(data) && data !== ";" && data !== "," && data !== "g" && data !== "G") {
       this.pending = { type: "none" };
       if (data.length === 1 && data.charCodeAt(0) >= 32) return;
       super.handleInput(data);
       return;
     }
-    // Find/till under operator (df{ch}, dt{ch}, ...)
     if (FIND_KEYS.has(data)) {
       this.pending = { type: "find", find: data as FindKind, operator: op };
       return;
     }
-    // ; / , under operator: apply to last find target
     if (data === ";" || data === ",") {
       this.pending = { type: "none" };
       if (this.lastFind) {
@@ -237,33 +206,25 @@ export class PiVimEditor extends CustomEditor {
       }
       return;
     }
-    // G under operator: linewise to last line (dG, yG, cG)
     if (data === "G") {
       this.pending = { type: "none" };
       this.jumpLine(this.st.lines.length - 1, op);
       return;
     }
-    // g under operator: wait for second g (dgg, ygg, cgg)
     if (data === "g") {
       this.pending = { type: "gpending", operator: op };
       return;
     }
-    // Text object scope prefix
     if (data === "i" || data === "a") {
       this.pending = { type: "textobject", operator: op, scope: data === "i" ? "inner" : "around" };
       return;
     }
-    // Motion
     this.pending = { type: "none" };
     this.applyOperatorToMotion(op, data);
   }
 
-  // ====================================================================
-  // Find/till char (f t F T)
-  // ====================================================================
   private handleFindPending(find: FindKind, op: VimOperator | undefined, data: string): void {
     this.pending = { type: "none" };
-    // Esc or non-printable cancels; pass control keys through
     if (data.length !== 1 || data.charCodeAt(0) < 32) {
       super.handleInput(data);
       return;
@@ -271,19 +232,20 @@ export class PiVimEditor extends CustomEditor {
     this.resolveFind(find, data, op);
   }
 
-  /** Repeat last find. reverse=true flips direction (,). */
   private repeatFind(reverse: boolean) {
     if (!this.lastFind) return;
     const kind = reverse ? reverseFind(this.lastFind.find) : this.lastFind.find;
     this.resolveFind(kind, this.lastFind.char, undefined);
   }
 
-  /** Apply a find motion, optionally as an operator target. */
   private resolveFind(find: FindKind, ch: string, op: VimOperator | undefined) {
     const s = this.st;
     const line = s.lines[s.cursorLine] ?? "";
     const target = findCharOnLine(line, s.cursorCol, ch, find);
-    if (target < 0) return; // char not found on line — no-op
+    if (target < 0) return;
+    // Zero-motion t/T (target char adjacent to the cursor) fails in vim:
+    // abort instead of deleting/yanking the char under the cursor.
+    if (target === s.cursorCol) return;
     this.lastFind = { find, char: ch };
 
     if (op === undefined) {
@@ -301,21 +263,16 @@ export class PiVimEditor extends CustomEditor {
     }
   }
 
-  // ====================================================================
-  // Buffer jumps (gg / G)
-  // ====================================================================
   private handleGpending(op: VimOperator | undefined, data: string): void {
     this.pending = { type: "none" };
     if (data === "g") {
       this.jumpLine(0, op);
       return;
     }
-    // Any other key cancels; pass control keys through.
     if (data.length === 1 && data.charCodeAt(0) >= 32) return;
     super.handleInput(data);
   }
 
-  /** Jump to a line (0-indexed), optionally as a linewise operator target. */
   private jumpLine(targetLine: number, op: VimOperator | undefined) {
     const s = this.st;
     const clamped = Math.max(0, Math.min(targetLine, s.lines.length - 1));
@@ -326,19 +283,15 @@ export class PiVimEditor extends CustomEditor {
       return;
     }
 
-    // Linewise: like dj/dk but to a buffer boundary.
     const lo = Math.min(s.cursorLine, clamped);
     const count = Math.abs(clamped - s.cursorLine) + 1;
-    setYank(s.lines.slice(lo, lo + count).join("\n"), "line");
-    if (op === "yank") return; // yank doesn't move cursor
+    this.recordYank(s.lines.slice(lo, lo + count).join("\n"), "line", op);
+    if (op === "yank") return;
     s.cursorLine = lo;
     deleteLines(this.edState, count);
     if (op === "change") this.mode = "insert";
   }
 
-  // ====================================================================
-  // Text-object-pending (after d/y/c + i/a)
-  // ====================================================================
   private handleTextObjectPending(op: VimOperator, scope: TextObjectScope, data: string): void {
     this.pending = { type: "none" };
     const object = TEXT_OBJECTS[data];
@@ -352,13 +305,16 @@ export class PiVimEditor extends CustomEditor {
     this.applyOperatorToRange(op, range.startLine, range.startCol, range.endLine, range.endCol);
   }
 
-  // ====================================================================
-  // Operator application
-  // ====================================================================
+  /** Record text in the vim register. Explicit yanks (`y`, `Y`) also mirror
+   *  to the system clipboard; deletes stay internal so they don't clobber it. */
+  private recordYank(text: string, type: "char" | "line", op: VimOperator) {
+    setYank(text, type);
+    if (op === "yank") void copyToClipboard(text).catch(() => {});
+  }
 
   private applyOperatorToLine(op: VimOperator) {
     if (op === "yank") {
-      setYank(this.st.lines[this.st.cursorLine] ?? "", "line");
+      this.recordYank(this.st.lines[this.st.cursorLine] ?? "", "line", op);
       return;
     }
     const text = deleteLines(this.edState, 1);
@@ -373,9 +329,10 @@ export class PiVimEditor extends CustomEditor {
     if (motion === "j" || motion === "k") {
       const dir = motion === "j" ? 1 : -1;
       const target = Math.max(0, Math.min(s.cursorLine + dir, s.lines.length - 1));
+      if (target === s.cursorLine) return; // at buffer edge — no adjacent line, abort
       const lo = Math.min(s.cursorLine, target);
       const count = Math.abs(target - s.cursorLine) + 1;
-      setYank(s.lines.slice(lo, lo + count).join("\n"), "line");
+      this.recordYank(s.lines.slice(lo, lo + count).join("\n"), "line", op);
       if (op === "yank") return;
       s.cursorLine = lo;
       deleteLines(this.edState, count);
@@ -387,7 +344,7 @@ export class PiVimEditor extends CustomEditor {
       applyMotion: (m, c) => this.applyMotion(m, c),
       st: this.st,
     });
-    setYank(range.text, "char");
+    this.recordYank(range.text, "char", op);
     if (op === "yank") return;
     deleteRange(this.edState, range.startLine, range.startCol, range.endLine, range.endCol);
     if (op === "change") this.mode = "insert";
@@ -398,15 +355,12 @@ export class PiVimEditor extends CustomEditor {
     const range = sl === el && sc === ec
       ? { text: s.lines[sl]?.slice(sc, ec) ?? "" }
       : { text: textBetween(s.lines, sl, sc, el, ec) };
-    setYank(range.text, "char");
+    this.recordYank(range.text, "char", op);
     if (op === "yank") return;
     deleteRange(this.edState, sl, sc, el, ec);
     if (op === "change") this.mode = "insert";
   }
 
-  // ====================================================================
-  // Motions (standalone)
-  // ====================================================================
   private applyMotion(motion: string, _count = 1): void {
     const s = this.st;
     switch (motion) {
@@ -418,7 +372,8 @@ export class PiVimEditor extends CustomEditor {
       case "b": this.em("moveWordBackwards"); break;
       case "e": {
         const line = s.lines[s.cursorLine] ?? "";
-        s.cursorCol = findWordEnd(line, s.cursorCol + 1);
+        const target = findWordEnd(line, s.cursorCol + 1);
+        if (target >= 0) s.cursorCol = target; // -1 = no word end ahead: stay put
         break;
       }
       case "0": s.cursorCol = 0; break;
@@ -427,46 +382,10 @@ export class PiVimEditor extends CustomEditor {
   }
 }
 
-// ====================================================================
-// Helpers
-// ====================================================================
-
 function operatorOf(key: string): VimOperator {
   return key === "d" ? "delete" : key === "y" ? "yank" : "change";
 }
 
 function operatorKey(op: VimOperator): string {
   return op === "delete" ? "d" : op === "yank" ? "y" : "c";
-}
-
-/** Find target column for f/t/F/T. Returns -1 if not found on line. */
-function findCharOnLine(line: string, fromCol: number, ch: string, kind: FindKind): number {
-  switch (kind) {
-    case "f": // next occurrence of ch after cursor
-      for (let i = fromCol + 1; i < line.length; i++) if (line[i] === ch) return i;
-      return -1;
-    case "F": // previous occurrence of ch before cursor
-      for (let i = fromCol - 1; i >= 0; i--) if (line[i] === ch) return i;
-      return -1;
-    case "t": // position just before next ch
-      for (let i = fromCol + 1; i < line.length; i++) if (line[i] === ch) return i - 1;
-      return -1;
-    case "T": // position just after previous ch
-      for (let i = fromCol - 1; i >= 0; i--) if (line[i] === ch) return i + 1;
-      return -1;
-  }
-}
-
-/** Reverse a find direction for ,. f<->F, t<->T. */
-function reverseFind(kind: FindKind): FindKind {
-  return kind === "f" ? "F" : kind === "F" ? "f" : kind === "t" ? "T" : "t";
-}
-
-/** Extract text between two positions for yank. */
-function textBetween(lines: string[], sl: number, sc: number, el: number, ec: number): string {
-  if (sl === el) return (lines[sl] ?? "").slice(sc, ec);
-  const parts = [(lines[sl] ?? "").slice(sc)];
-  for (let i = sl + 1; i < el; i++) parts.push(lines[i] ?? "");
-  parts.push((lines[el] ?? "").slice(0, ec));
-  return parts.join("\n");
 }
