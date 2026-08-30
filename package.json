@@ -29,5 +29,10 @@
     "knip": "knip",
     "audit": "npm audit",
     "check": "npm run typecheck && npm run knip && npm test && npm run audit"
+  },
+  "knip": {
+    "ignoreBinaries": [
+      "nvim"
+    ]
   }
 }

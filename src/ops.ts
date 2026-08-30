@@ -58,6 +58,7 @@ export function motionRange(
   motion: string, count: number,
   startLine: number, startCol: number,
   ed: MotionCtx,
+  opts: { inclusiveEnd?: boolean } = {},
 ): TextRange {
   const savedLine = ed.st.cursorLine;
   const savedCol = ed.st.cursorCol;
@@ -69,11 +70,15 @@ export function motionRange(
   ed.st.cursorLine = savedLine;
   ed.st.cursorCol = savedCol;
 
+  // Inclusive motions (e lands ON a character) extend the exclusive range
+  // by one; past-end destinations (pi's `$` convention) already cover it.
+  const endColX = endCol + (opts.inclusiveEnd ? 1 : 0);
+
   // Normalize direction so start <= end, then capture the covered text.
-  const forward = startLine < endLine || (startLine === endLine && startCol <= endCol);
+  const forward = startLine < endLine || (startLine === endLine && startCol <= endColX);
   const [aLine, aCol, bLine, bCol] = forward
-    ? [startLine, startCol, endLine, endCol]
-    : [endLine, endCol, startLine, startCol];
+    ? [startLine, startCol, endLine, endColX]
+    : [endLine, endColX, startLine, startCol];
   return {
     startLine: aLine, startCol: aCol, endLine: bLine, endCol: bCol,
     text: textBetween(ed.st.lines, aLine, aCol, bLine, bCol),

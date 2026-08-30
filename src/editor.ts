@@ -273,20 +273,24 @@ export class PiVimEditor extends CustomEditor {
     const line = s.lines[s.cursorLine] ?? "";
     const target = findCharOnLine(line, s.cursorCol, ch, find);
     if (target < 0) return;
-    // Zero-motion t/T (target char adjacent to the cursor) fails in vim:
-    // abort instead of deleting/yanking the char under the cursor.
-    if (target === s.cursorCol) return;
     this.lastFind = { find, char: ch };
 
     if (op === undefined) {
-      s.cursorCol = target;
+      // zero-motion t/T (target adjacent): nowhere to move, cursor stays
+      if (target !== s.cursorCol) s.cursorCol = target;
       return;
     }
 
     const isBackward = find === "F" || find === "T";
     // f/F include the found char; t/T land adjacent so +1 excludes it.
+    // Zero-motion t (target char adjacent) hits vim's exclusive-motion rule
+    // ("end of an exclusive motion in the cursor's own line -> the motion
+    // becomes inclusive"): the operator eats exactly the char under the
+    // cursor. Zero-motion T does NOT get that conversion — it fails.
+    // (Both verified against headless nvim.)
     // Backward motions include the cursor's char (endCol = cursor + 1).
     if (isBackward) {
+      if (target === s.cursorCol) return; // zero-motion T fails, no inclusive conversion
       this.applyOperatorToRange(op, s.cursorLine, target, s.cursorLine, s.cursorCol + 1);
     } else {
       this.applyOperatorToRange(op, s.cursorLine, s.cursorCol, s.cursorLine, target + 1);
@@ -373,7 +377,7 @@ export class PiVimEditor extends CustomEditor {
     const range = motionRange(motion, 1, s.cursorLine, s.cursorCol, {
       applyMotion: (m, c) => this.applyMotion(m, c),
       st: this.st,
-    });
+    }, { inclusiveEnd: motion === "e" });
     if (range.text === "") return; // motion didn't move — vim aborts the operator
     this.recordYank(range.text, "char", op);
     if (op === "yank") return;
