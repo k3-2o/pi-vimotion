@@ -311,6 +311,20 @@ function flatToLineCol(lines: string[], offset: number): { line: number; col: nu
   return { line: lines.length - 1, col: lines[lines.length - 1]?.length ?? 0 };
 }
 
+/**
+ * The grapheme at (line, col) - matches what the editor deletes in one
+ * forward-delete, which is grapheme-based, not code-unit-based.
+ * Returns "" when col is past the end of the line.
+ */
+export function graphemeAt(line: string, col: number): string {
+  if (col < 0 || col >= line.length) return "";
+  for (const segment of new Intl.Segmenter().segment(line)) {
+    if (segment.index === col) return segment.segment;
+    if (segment.index > col) return ""; // col landed mid-grapheme: nothing starts there
+  }
+  return "";
+}
+
 /** Extract the text between two positions, joining lines with newlines. */
 export function textBetween(lines: string[], sl: number, sc: number, el: number, ec: number): string {
   if (sl === el) return (lines[sl] ?? "").slice(sc, ec);

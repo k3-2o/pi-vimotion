@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { textObjectRange, deleteRange, deleteLines, pasteAfter, setYank, textBetween, motionRange } from "../src/ops.ts";
+import { textObjectRange, deleteRange, deleteLines, pasteAfter, setYank, textBetween, motionRange, graphemeAt } from "../src/ops.ts";
 import type { EdState } from "../src/ops.ts";
 
 function at(lines: string[], col: number): EdState {
@@ -155,4 +155,13 @@ test("motionRange: forward, backward, and cursor restoration", () => {
   assert.equal(back.text, "ello\nwor");
   assert.deepEqual({ sl: back.startLine, sc: back.startCol, el: back.endLine, ec: back.endCol },
                    { sl: 0, sc: 1, el: 1, ec: 3 });
+});
+
+test("graphemeAt: astral chars yield the full grapheme (x/s yank contract)", () => {
+  const line = "x\u{1F44D}y";
+  assert.equal(graphemeAt(line, 1), "\u{1F44D}"); // was a lone surrogate before the fix
+  assert.equal(graphemeAt(line, 0), "x");
+  assert.equal(graphemeAt(line, 3), "y");
+  assert.equal(graphemeAt(line, 99), "");          // past end -> "" (no yank)
+  assert.equal(graphemeAt("ab", 1), "b");
 });

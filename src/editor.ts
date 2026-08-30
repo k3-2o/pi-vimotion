@@ -3,7 +3,7 @@ import { matchesKey } from "@earendil-works/pi-tui";
 import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope, FindKind } from "./types.ts";
 import { firstNonBlankCol, findWordEnd, findCharOnLine, reverseFind } from "./motions.ts";
 import {
-  type EdState, textBetween,
+  type EdState, textBetween, graphemeAt,
   setYank, motionRange, deleteRange, deleteLines, pasteAfter, textObjectRange,
 } from "./ops.ts";
 
@@ -129,7 +129,7 @@ export class PiVimEditor extends CustomEditor {
       case "x": {
         const line = s.lines[s.cursorLine] ?? "";
         if (s.cursorCol < line.length) {
-          const del = line[s.cursorCol];
+          const del = graphemeAt(line, s.cursorCol);
           this.em("handleForwardDelete");
           setYank(del, "char");
         }
@@ -138,7 +138,7 @@ export class PiVimEditor extends CustomEditor {
       case "s": {
         const line = s.lines[s.cursorLine] ?? "";
         if (s.cursorCol < line.length) {
-          setYank(line[s.cursorCol], "char");
+          setYank(graphemeAt(line, s.cursorCol), "char");
           this.em("handleForwardDelete");
         }
         this.mode = "insert";
