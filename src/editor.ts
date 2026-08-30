@@ -98,7 +98,10 @@ export class PiVimEditor extends CustomEditor {
 
     switch (data) {
       case "i": this.mode = "insert"; return;
-      case "a": this.em("moveCursor", 0, 1); this.mode = "insert"; return;
+      case "a":
+        if (this.st.cursorCol < (this.st.lines[this.st.cursorLine] ?? "").length) this.em("moveCursor", 0, 1);
+        this.mode = "insert";
+        return;
       case "I": this.st.cursorCol = firstNonBlankCol(this.st.lines[this.st.cursorLine] ?? ""); this.mode = "insert"; return;
       case "A": this.em("moveToLineEnd"); this.mode = "insert"; return;
       case "o": this.em("moveToLineEnd"); this.em("addNewLine"); this.mode = "insert"; return;
@@ -364,10 +367,10 @@ export class PiVimEditor extends CustomEditor {
   private applyMotion(motion: string, _count = 1): void {
     const s = this.st;
     switch (motion) {
-      case "h": this.em("moveCursor", 0, -1); break;
+      case "h": if (s.cursorCol > 0) this.em("moveCursor", 0, -1); break;
       case "j": this.em("moveCursor", 1, 0); break;
       case "k": this.em("moveCursor", -1, 0); break;
-      case "l": this.em("moveCursor", 0, 1); break;
+      case "l": if (s.cursorCol < (s.lines[s.cursorLine] ?? "").length) this.em("moveCursor", 0, 1); break;
       case "w": this.em("moveWordForwards"); break;
       case "b": this.em("moveWordBackwards"); break;
       case "e": {
