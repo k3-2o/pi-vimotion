@@ -1,4 +1,4 @@
-import { Markdown, matchesKey, type Component } from "@earendil-works/pi-tui";
+import { Markdown, type Component } from "@earendil-works/pi-tui";
 
 export function buildKeybindingsMarkdown(): string {
   return `### pi-vim Keybindings
@@ -78,12 +78,8 @@ export function createKeybindingsComponent(
     invalidate(): void {
       md.invalidate();
     },
-    handleInput(data: string): void {
-      if (matchesKey(data, "escape") || data === "q") {
-        done(null);
-        return;
-      }
-      done(null);
+    handleInput(_data: string): void {
+      done(null); // any key dismisses the reference
     },
   };
 }
