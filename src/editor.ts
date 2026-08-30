@@ -347,6 +347,7 @@ export class PiVimEditor extends CustomEditor {
       applyMotion: (m, c) => this.applyMotion(m, c),
       st: this.st,
     });
+    if (range.text === "") return; // motion didn't move — vim aborts the operator
     this.recordYank(range.text, "char", op);
     if (op === "yank") return;
     deleteRange(this.edState, range.startLine, range.startCol, range.endLine, range.endCol);
