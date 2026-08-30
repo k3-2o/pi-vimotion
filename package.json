@@ -1,7 +1,7 @@
 {
   "name": "pi-vimotion",
   "version": "1.1.1",
-  "description": "Modal vim editing for pi's prompt box — two modes, operators + text objects, find/till, buffer jumps",
+  "description": "Modal vim editing for pi's prompt box \u2014 two modes, operators + text objects, find/till, buffer jumps",
   "keywords": [
     "pi",
     "pi-extension",
@@ -18,9 +18,16 @@
   "author": "k3-2o",
   "license": "MIT",
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.4",
+    "@earendil-works/pi-tui": "^0.84.4",
+    "knip": "^6.33.0",
     "typescript": "^7.0.2"
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.ts\""
+    "test": "node --test \"tests/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "knip": "knip",
+    "audit": "npm audit",
+    "check": "npm run typecheck && npm run knip && npm test && npm run audit"
   }
 }
