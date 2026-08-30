@@ -28,6 +28,26 @@ const TEXT_OBJECTS: Record<string, VimTextObject> = {
 
 const FIND_KEYS = new Set(["f", "t", "F", "T"]);
 
+/**
+ * The private CustomEditor shape pi-vim relies on. pi does not expose it
+ * typed; instead of scattered unchecked casts, it is declared once and
+ * guarded in one place: if pi renames a member, the extension fails loudly
+ * here rather than misbehaving quietly later.
+ */
+interface EditorInternals {
+  state: { lines: string[]; cursorLine: number; cursorCol: number };
+  onChange?: (text: string) => void;
+  pushUndoSnapshot(): void;
+  moveCursor(deltaLine: number, deltaCol: number): void;
+  moveToLineEnd(): void;
+  addNewLine(): void;
+  moveWordForwards(): void;
+  moveWordBackwards(): void;
+  handleForwardDelete(): void;
+  deleteToEndOfLine(): void;
+  undo(): void;
+}
+
 export class PiVimEditor extends CustomEditor {
   mode: VimMode = "normal"; // enter in Normal; i/a/o… to start typing
   pending: VimPending = { type: "none" };
@@ -35,13 +55,20 @@ export class PiVimEditor extends CustomEditor {
 
   onKeybindingsRequest?: () => void;
 
-  /** The base editor's private state bag (pi doesn't expose it typed). */
-  private get st() {
-    return (this as any).state as { lines: string[]; cursorLine: number; cursorCol: number };
+  /** Guarded view of the host editor's internals. Fetched fresh on every use:
+   *  pi replaces the state object (e.g. on submit), so caching would go stale. */
+  private get host(): EditorInternals {
+    const editor = this as unknown as EditorInternals;
+    if (!editor.state || !Array.isArray(editor.state.lines)) {
+      throw new Error(
+        "pi-vim: CustomEditor internals unavailable — pi's editor shape changed; update EditorInternals",
+      );
+    }
+    return editor;
   }
 
-  private em(name: string, ...args: unknown[]) {
-    (this as any)[name](...args);
+  private get st() {
+    return this.host.state;
   }
 
   /** EdState view over the base editor's state — ops.ts mutations land live in pi. */
@@ -54,8 +81,8 @@ export class PiVimEditor extends CustomEditor {
       set cursorLine(v: number) { s.cursorLine = v; },
       get cursorCol() { return s.cursorCol; },
       set cursorCol(v: number) { s.cursorCol = v; },
-      onChange: (text) => { if ((this as any).onChange) (this as any).onChange(text); },
-      pushUndoSnapshot: () => { (this as any).pushUndoSnapshot(); },
+      onChange: (text) => { this.host.onChange?.(text); },
+      pushUndoSnapshot: () => { this.host.pushUndoSnapshot(); },
     };
   }
 
@@ -99,16 +126,16 @@ export class PiVimEditor extends CustomEditor {
     switch (data) {
       case "i": this.mode = "insert"; return;
       case "a":
-        if (this.st.cursorCol < (this.st.lines[this.st.cursorLine] ?? "").length) this.em("moveCursor", 0, 1);
+        if (this.st.cursorCol < (this.st.lines[this.st.cursorLine] ?? "").length) this.host.moveCursor(0, 1);
         this.mode = "insert";
         return;
       case "I": this.st.cursorCol = firstNonBlankCol(this.st.lines[this.st.cursorLine] ?? ""); this.mode = "insert"; return;
-      case "A": this.em("moveToLineEnd"); this.mode = "insert"; return;
-      case "o": this.em("moveToLineEnd"); this.em("addNewLine"); this.mode = "insert"; return;
+      case "A": this.host.moveToLineEnd(); this.mode = "insert"; return;
+      case "o": this.host.moveToLineEnd(); this.host.addNewLine(); this.mode = "insert"; return;
       case "O":
-        this.em("moveCursor", -1, 0);
-        this.em("moveToLineEnd");
-        this.em("addNewLine");
+        this.host.moveCursor(-1, 0);
+        this.host.moveToLineEnd();
+        this.host.addNewLine();
         this.mode = "insert";
         return;
     }
@@ -130,7 +157,7 @@ export class PiVimEditor extends CustomEditor {
         const line = s.lines[s.cursorLine] ?? "";
         if (s.cursorCol < line.length) {
           const del = graphemeAt(line, s.cursorCol);
-          this.em("handleForwardDelete");
+          this.host.handleForwardDelete();
           setYank(del, "char");
         }
         return;
@@ -139,7 +166,7 @@ export class PiVimEditor extends CustomEditor {
         const line = s.lines[s.cursorLine] ?? "";
         if (s.cursorCol < line.length) {
           setYank(graphemeAt(line, s.cursorCol), "char");
-          this.em("handleForwardDelete");
+          this.host.handleForwardDelete();
         }
         this.mode = "insert";
         return;
@@ -147,14 +174,14 @@ export class PiVimEditor extends CustomEditor {
       case "D": {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
-        this.em("deleteToEndOfLine");
+        this.host.deleteToEndOfLine();
         if (deleted) setYank(deleted, "char"); // nothing deleted -> leave the register alone
         return;
       }
       case "C": {
         const line = s.lines[s.cursorLine] ?? "";
         const deleted = line.slice(s.cursorCol);
-        this.em("deleteToEndOfLine");
+        this.host.deleteToEndOfLine();
         if (deleted) setYank(deleted, "char");
         this.mode = "insert";
         return;
@@ -175,7 +202,7 @@ export class PiVimEditor extends CustomEditor {
     }
 
     if (data === "K") { this.onKeybindingsRequest?.(); return; }
-    if (data === "u") { this.em("undo"); return; }
+    if (data === "u") { this.host.undo(); return; }
 
     // Unrecognized printable: ignore; control keys fall through
     if (data.length === 1 && data.charCodeAt(0) >= 32) return;
@@ -364,12 +391,12 @@ export class PiVimEditor extends CustomEditor {
   private applyMotion(motion: string, _count = 1): void {
     const s = this.st;
     switch (motion) {
-      case "h": if (s.cursorCol > 0) this.em("moveCursor", 0, -1); break;
-      case "j": this.em("moveCursor", 1, 0); break;
-      case "k": this.em("moveCursor", -1, 0); break;
-      case "l": if (s.cursorCol < (s.lines[s.cursorLine] ?? "").length) this.em("moveCursor", 0, 1); break;
-      case "w": this.em("moveWordForwards"); break;
-      case "b": this.em("moveWordBackwards"); break;
+      case "h": if (s.cursorCol > 0) this.host.moveCursor(0, -1); break;
+      case "j": this.host.moveCursor(1, 0); break;
+      case "k": this.host.moveCursor(-1, 0); break;
+      case "l": if (s.cursorCol < (s.lines[s.cursorLine] ?? "").length) this.host.moveCursor(0, 1); break;
+      case "w": this.host.moveWordForwards(); break;
+      case "b": this.host.moveWordBackwards(); break;
       case "e": {
         const line = s.lines[s.cursorLine] ?? "";
         const target = findWordEnd(line, s.cursorCol + 1);
@@ -377,7 +404,7 @@ export class PiVimEditor extends CustomEditor {
         break;
       }
       case "0": s.cursorCol = 0; break;
-      case "$": this.em("moveToLineEnd"); break;
+      case "$": this.host.moveToLineEnd(); break;
     }
   }
 }
