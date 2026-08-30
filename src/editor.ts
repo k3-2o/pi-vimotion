@@ -1,6 +1,6 @@
 import { CustomEditor, copyToClipboard } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
-import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope, FindKind } from "./types.ts";
+import type { VimMode, VimOperator, VimPending, VimTextObject, TextObjectScope, FindKind, LastFind } from "./types.ts";
 import { firstNonBlankCol, findWordEnd, findCharOnLine, reverseFind } from "./motions.ts";
 import {
   type EdState, textBetween, graphemeAt,
@@ -31,7 +31,7 @@ const FIND_KEYS = new Set(["f", "t", "F", "T"]);
 export class PiVimEditor extends CustomEditor {
   mode: VimMode = "normal"; // enter in Normal; i/a/o… to start typing
   pending: VimPending = { type: "none" };
-  lastFind: { find: FindKind; char: string } | null = null;
+  lastFind: LastFind | null = null;
 
   onKeybindingsRequest?: () => void;
 

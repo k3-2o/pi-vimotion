@@ -1,7 +1,7 @@
 import { Markdown, type Component } from "@earendil-works/pi-tui";
 import type { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 
-export function buildKeybindingsMarkdown(): string {
+function buildKeybindingsMarkdown(): string {
   return `### pi-vim Keybindings
 
 **Motions**

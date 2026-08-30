@@ -9,11 +9,11 @@ export interface EdState {
   pushUndoSnapshot?: () => void;
 }
 
-export function getCursor(s: EdState) {
+function getCursor(s: EdState) {
   return { line: s.cursorLine, col: s.cursorCol };
 }
 
-export function setCursorPos(s: EdState, line: number, col: number) {
+function setCursorPos(s: EdState, line: number, col: number) {
   s.cursorLine = Math.max(0, Math.min(line, s.lines.length - 1));
   const maxCol = s.lines[s.cursorLine]?.length ?? 0;
   s.cursorCol = Math.max(0, Math.min(col, maxCol));
@@ -26,7 +26,7 @@ function notifyChanged(s: EdState) {
 // Yank buffer (module-level, cleared on session shutdown)
 let yankBuffer: YankedText | null = null;
 
-export function getYank(): YankedText | null {
+function getYank(): YankedText | null {
   return yankBuffer;
 }
 
