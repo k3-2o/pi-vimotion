@@ -1,4 +1,5 @@
 import { Markdown, type Component } from "@earendil-works/pi-tui";
+import type { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 
 export function buildKeybindingsMarkdown(): string {
   return `### pi-vim Keybindings
@@ -65,7 +66,7 @@ _Buffer jumps too: \`dG\` deletes to end of buffer, \`ygg\` yanks back to the to
 }
 
 export function createKeybindingsComponent(
-  mdTheme: any,
+  mdTheme: ReturnType<typeof getMarkdownTheme>,
   done: (value: null) => void,
   requestRender: () => void,
 ): Component {

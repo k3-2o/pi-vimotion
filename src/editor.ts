@@ -44,7 +44,7 @@ export class PiVimEditor extends CustomEditor {
     (this as any)[name](...args);
   }
 
-/** EdState view over the base editor's state — ops.ts mutations land live in pi. */
+  /** EdState view over the base editor's state — ops.ts mutations land live in pi. */
   get edState(): EdState {
     const s = this.st;
     return {
@@ -355,11 +355,7 @@ export class PiVimEditor extends CustomEditor {
   }
 
   private applyOperatorToRange(op: VimOperator, sl: number, sc: number, el: number, ec: number) {
-    const s = this.st;
-    const range = sl === el && sc === ec
-      ? { text: s.lines[sl]?.slice(sc, ec) ?? "" }
-      : { text: textBetween(s.lines, sl, sc, el, ec) };
-    this.recordYank(range.text, "char", op);
+    this.recordYank(textBetween(this.st.lines, sl, sc, el, ec), "char", op);
     if (op === "yank") return;
     deleteRange(this.edState, sl, sc, el, ec);
     if (op === "change") this.mode = "insert";

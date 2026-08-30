@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -30,7 +30,7 @@ export default function (pi: ExtensionAPI) {
   // Seed from persisted preference so /reload preserves the on/off state.
   let vimActive = readVimPref();
 
-  const updateStatus = (ctx: ExtensionContext, theme: any, mode: VimMode) => {
+  const updateStatus = (ctx: ExtensionContext, theme: Theme, mode: VimMode) => {
     const label = mode === "normal" ? "Vim: Normal" : "Vim: Insert";
     const color = mode === "normal" ? "accent" : "success";
     ctx.ui.setStatus("pi-vim", theme.fg(color, label));
