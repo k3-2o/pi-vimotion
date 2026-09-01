@@ -1,7 +1,7 @@
 {
   "name": "pi-vimotion",
-  "version": "1.2.1",
-  "description": "Modal vim editing for pi's prompt box \u2014 two modes, operators + text objects, find/till, buffer jumps",
+  "version": "1.3.0",
+  "description": "Modal vim editing for pi's prompt box — two modes, operators + text objects, find/till, buffer jumps",
   "keywords": [
     "pi",
     "pi-extension",
