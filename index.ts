@@ -1,11 +1,11 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { PiVimEditor } from "./src/editor.ts";
 import type { VimMode } from "./src/types.ts";
 import { resetState } from "./src/ops.ts";
-import { createKeybindingsComponent } from "./src/keybindings.ts";
+import { KeybindingsComponent } from "./src/keybindings.ts";
 
 const VIM_PREF_FILE = join(getAgentDir(), "vim-enabled");
 
@@ -54,16 +54,12 @@ export default function (pi: ExtensionAPI) {
           updateStatus(ctx, theme, editor.mode);
         }
       };
-      // K in normal mode shows keybinding reference (blocks during streaming)
+      // K in normal mode opens the interactive keybinding reference. A
+      // stateful component owns render + input until q/Esc — same shape as
+      // the session-breakdown mode. No idle gate: it works mid-stream too
+      // (the overlay takes input until closed, then the stream keeps going).
       editor.onKeybindingsRequest = () => {
-        if (!ctx.isIdle()) {
-          ctx.ui.notify("Stream busy — try again in a sec", "warning");
-          return;
-        }
-        ctx.ui.custom<null>(
-          (tui2, _theme, _kb, done) =>
-            createKeybindingsComponent(getMarkdownTheme(), done, () => tui2.requestRender()),
-        );
+        ctx.ui.custom<null>((tui2, theme, _kb, done) => new KeybindingsComponent(tui2, theme, done));
       };
       return editor;
     });
