@@ -3,19 +3,52 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { SECTIONS } from "./content.ts";
 import { drawOverlay, FALLBACK_ROWS } from "./layout.ts";
 
+/** What a keystroke means to the overlay. Parsing is pure and owns the
+ *  whole key grammar; effects (mutate, dismiss, re-render) live in the
+ *  component. */
+type Command =
+  | { type: "close" }
+  | { type: "cycle"; delta: 1 | -1 }
+  | { type: "select"; index: number }
+  | { type: "ignore" };
+
+export function parseCommand(data: string, sectionCount: number): Command {
+  // Dismiss set shared with session-breakdown's overlay: q, Esc, Ctrl+C.
+  if (
+    matchesKey(data, Key.escape) ||
+    matchesKey(data, Key.ctrl("c")) ||
+    data.toLowerCase() === "q"
+  ) {
+    return { type: "close" };
+  }
+  const key = data.toLowerCase();
+  if (matchesKey(data, Key.left) || key === "h" || key === "k") return { type: "cycle", delta: -1 };
+  if (matchesKey(data, Key.right) || key === "l" || key === "j") return { type: "cycle", delta: 1 };
+  // Single-stroke digits only: multi-char escape sequences must never
+  // parse as section jumps. NaN comparisons fail the range check for us.
+  if (key.length === 1) {
+    const n = Number(key);
+    if (n >= 1 && n <= sectionCount) return { type: "select", index: n - 1 };
+  }
+  return { type: "ignore" };
+}
+
+interface CacheKey {
+  width: number;
+  rows: number;
+  section: number;
+  theme: Theme;
+}
+
 /**
- * Interactive pi-vim keybinding reference. Owns input until dismissed
- * (q / Esc / Ctrl+C), re-renders on every keystroke, and colors from the
- * live Theme. State is just the selected section; drawing lives in
- * layout.ts, content in content.ts.
+ * Interactive pi-vim keybinding reference. Owns input until dismissed,
+ * re-renders on every keystroke, and colors from the live Theme. Its only
+ * state is the selected section; drawing lives in layout.ts, content in
+ * content.ts.
  */
 export class KeybindingsComponent implements Component {
   private section = 0;
-  private cachedWidth?: number;
-  private cachedRows?: number;
-  private cachedSection?: number;
-  private cachedTheme?: Theme;
-  private cachedLines?: string[];
+  private cache?: { key: CacheKey; lines: string[] };
 
   private readonly tui: TUI;
   private readonly theme: Theme;
@@ -28,74 +61,54 @@ export class KeybindingsComponent implements Component {
   }
 
   invalidate(): void {
-    this.cachedWidth = undefined;
-    this.cachedRows = undefined;
-    this.cachedSection = undefined;
-    this.cachedTheme = undefined;
-    this.cachedLines = undefined;
+    this.cache = undefined;
   }
 
   handleInput(data: string): void {
-    if (
-      matchesKey(data, Key.escape) ||
-      matchesKey(data, Key.ctrl("c")) ||
-      data.toLowerCase() === "q"
-    ) {
+    const command = parseCommand(data, SECTIONS.length);
+    if (command.type === "close") {
       this.done(null);
       return;
     }
-
-    const key = data.toLowerCase();
-    const prev = () => {
-      this.section = (this.section + SECTIONS.length - 1) % SECTIONS.length;
-      this.invalidate();
-      this.tui.requestRender();
-    };
-    const next = () => {
-      this.section = (this.section + 1) % SECTIONS.length;
-      this.invalidate();
-      this.tui.requestRender();
-    };
-
-    if (matchesKey(data, Key.left) || key === "h" || key === "k") prev();
-    if (matchesKey(data, Key.right) || key === "l" || key === "j") next();
-
-    const n = Number(key);
-    if (Number.isInteger(n) && n >= 1 && n <= SECTIONS.length) {
-      this.section = n - 1;
-      this.invalidate();
-      this.tui.requestRender();
+    if (command.type === "ignore") return;
+    if (command.type === "cycle") {
+      const n = SECTIONS.length;
+      this.setSection((this.section + command.delta + n) % n);
+      return;
     }
+    this.setSection(command.index);
+  }
 
-    // Unknown keys are ignored — the overlay keeps owning the screen until
-    // one of the close keys is pressed.
+  /** The single mutation point: section stays in range by construction,
+   *  no-op selections don't re-render, and the cache dies with the state. */
+  private setSection(index: number): void {
+    if (index === this.section) return;
+    this.section = index;
+    this.cache = undefined;
+    this.tui.requestRender();
   }
 
   render(width: number): string[] {
-    const termRows = this.tui.terminal?.rows || FALLBACK_ROWS;
+    const rows = this.tui.terminal?.rows || FALLBACK_ROWS;
+    const key: CacheKey = { width, rows, section: this.section, theme: this.theme };
+    const { cache } = this;
     if (
-      this.cachedWidth === width &&
-      this.cachedRows === termRows &&
-      this.cachedSection === this.section &&
-      this.cachedTheme === this.theme &&
-      this.cachedLines
+      cache &&
+      cache.key.width === key.width &&
+      cache.key.rows === key.rows &&
+      cache.key.section === key.section &&
+      cache.key.theme === key.theme
     ) {
-      return this.cachedLines;
+      return cache.lines;
     }
-
     const lines = drawOverlay({
       width,
-      termRows,
+      termRows: rows,
       sections: SECTIONS,
       selected: this.section,
       palette: this.theme,
     });
-
-    this.cachedWidth = width;
-    this.cachedRows = termRows;
-    this.cachedSection = this.section;
-    this.cachedTheme = this.theme;
-    this.cachedLines = lines;
+    this.cache = { key, lines };
     return lines;
   }
 }
