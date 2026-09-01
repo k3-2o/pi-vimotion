@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { PiVimEditor } from "./src/editor.ts";
 import type { VimMode } from "./src/types.ts";
 import { resetState } from "./src/ops.ts";
-import { KeybindingsComponent } from "./src/keybindings.ts";
+import { KeybindingsComponent } from "./src/keybindings/overlay.ts";
 
 const VIM_PREF_FILE = join(getAgentDir(), "vim-enabled");
 
